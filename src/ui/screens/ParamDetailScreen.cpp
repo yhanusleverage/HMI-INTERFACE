@@ -318,11 +318,11 @@ lv_coord_t makeAdjRow(lv_obj_t *parent, lv_coord_t y, const char *name, Adj fiel
         UiKit::makeSecondaryButton(row, "-", 44, AppTheme::TOUCH_MIN_H, onAdjMinus);
     lv_obj_remove_event_cb(minus, onAdjMinus);
     lv_obj_add_event_cb(minus, onAdjMinus, LV_EVENT_CLICKED, const_cast<void *>(ud));
-    lv_obj_align(minus, LV_ALIGN_RIGHT_MID, -118, 0);
+    lv_obj_align(minus, LV_ALIGN_RIGHT_MID, -126, 0);
 
     lv_obj_t *valBtn = lv_btn_create(row);
     lv_obj_remove_style_all(valBtn);
-    lv_obj_set_size(valBtn, 72, AppTheme::TOUCH_MIN_H);
+    lv_obj_set_size(valBtn, 80, AppTheme::TOUCH_MIN_H);
     lv_obj_align(valBtn, LV_ALIGN_RIGHT_MID, -54, 0);
     lv_obj_set_style_bg_opa(valBtn, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(valBtn, 0, 0);
@@ -340,8 +340,8 @@ lv_coord_t makeAdjRow(lv_obj_t *parent, lv_coord_t y, const char *name, Adj fiel
     lv_obj_t *val = lv_label_create(valBtn);
     lv_label_set_text(val, "--");
     lv_obj_set_style_text_color(val, AppTheme::accent(), 0);
-    lv_obj_set_style_text_font(val, &lv_font_montserrat_20, 0);
-    lv_obj_set_width(val, 72);
+    lv_obj_set_style_text_font(val, &lv_font_montserrat_28, 0);
+    lv_obj_set_width(val, 80);
     lv_obj_set_style_text_align(val, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_center(val);
     *valOut = val;

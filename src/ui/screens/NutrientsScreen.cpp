@@ -49,6 +49,10 @@ uint8_t draftRelay_ = 1;
 
 lv_obj_t *addBtn = nullptr;
 lv_obj_t *pctLbls[NUTRIENT_MAX] = {};
+lv_obj_t *recipeStep_ = nullptr;
+lv_obj_t *recipePanel_ = nullptr;
+lv_obj_t *recipeEcTa_ = nullptr;
+bool recipeLeaveAfter_ = false;
 
 /** Solo bombaN / pumpN — nunca concatenar con nombre de nutriente o pH. */
 void relayDisplay(uint8_t relay1to6, char *buf, size_t n);
@@ -59,11 +63,17 @@ void hideKeyboard() {
     }
     activeTa = nullptr;
     kbIsNumber_ = false;
+    if (recipePanel_ && recipeStep_ && !lv_obj_has_flag(recipeStep_, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_align(recipePanel_, LV_ALIGN_CENTER, 0, 0);
+    }
 }
 
 void bringChromeForward() {
-    if (addBtn) {
+    if (addBtn && (!recipeStep_ || lv_obj_has_flag(recipeStep_, LV_OBJ_FLAG_HIDDEN))) {
         lv_obj_move_foreground(addBtn);
+    }
+    if (recipeStep_ && !lv_obj_has_flag(recipeStep_, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_move_foreground(recipeStep_);
     }
     if (kb && !lv_obj_has_flag(kb, LV_OBJ_FLAG_HIDDEN)) {
         lv_obj_move_foreground(kb);
@@ -82,6 +92,9 @@ void setContentHeight(bool keyboardOpen) {
 void paintUi();
 void refreshTotal();
 void refreshEmpty();
+void showRecipeEcStep(bool leaveAfter);
+void hideRecipeEcStep();
+bool recipeEcMissing();
 
 void loadDraft(size_t ix) {
     draftName_[0] = '\0';
@@ -143,10 +156,22 @@ void refreshListPcts() {
 
 void onNavBack(lv_event_t *) {
     hideKeyboard();
+    if (recipeStep_ && !lv_obj_has_flag(recipeStep_, LV_OBJ_FLAG_HIDDEN)) {
+        const bool leave = recipeLeaveAfter_;
+        hideRecipeEcStep();
+        if (leave) {
+            NavShell::back();
+        }
+        return;
+    }
     if (editingIx_ != SIZE_MAX) {
         editingIx_ = SIZE_MAX;
         relayOpen_ = false;
         paintUi();
+        return;
+    }
+    if (recipeEcMissing()) {
+        showRecipeEcStep(true);
         return;
     }
     NavShell::back();
@@ -175,6 +200,77 @@ void refreshEmpty() {
     } else {
         lv_obj_add_flag(emptyLbl, LV_OBJ_FLAG_HIDDEN);
     }
+}
+
+bool recipeEcMissing() {
+    return NutrientConfig::listCount() > 0 && NutrientConfig::recipeEcUs() <= 0.0f;
+}
+
+void applyRecipeEcFromTa() {
+    if (!recipeEcTa_) {
+        return;
+    }
+    const char *txt = lv_textarea_get_text(recipeEcTa_);
+    if (!txt || txt[0] == '\0') {
+        return;
+    }
+    char *end = nullptr;
+    float v = strtof(txt, &end);
+    if (end == txt) {
+        return;
+    }
+    NutrientConfig::setRecipeEcUs(v);
+}
+
+void hideRecipeEcStep() {
+    hideKeyboard();
+    recipeLeaveAfter_ = false;
+    if (recipeStep_) {
+        lv_obj_add_flag(recipeStep_, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (addBtn) {
+        lv_obj_clear_flag(addBtn, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+void showRecipeEcStep(bool leaveAfter) {
+    recipeLeaveAfter_ = leaveAfter;
+    if (!recipeStep_ || !recipeEcTa_) {
+        return;
+    }
+    if (addBtn) {
+        lv_obj_add_flag(addBtn, LV_OBJ_FLAG_HIDDEN);
+    }
+    char buf[16];
+    const float v = NutrientConfig::recipeEcUs();
+    if (v > 0.0f) {
+        snprintf(buf, sizeof(buf), "%.0f", static_cast<double>(v));
+    } else {
+        buf[0] = '\0';
+    }
+    lv_textarea_set_text(recipeEcTa_, buf);
+    lv_obj_align(recipePanel_, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_clear_flag(recipeStep_, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(recipeStep_);
+}
+
+void onRecipeEcSave(lv_event_t *) {
+    applyRecipeEcFromTa();
+    if (NutrientConfig::recipeEcUs() <= 0.0f) {
+        return;
+    }
+    const bool leave = recipeLeaveAfter_;
+    hideRecipeEcStep();
+    if (leave) {
+        NavShell::back();
+        return;
+    }
+    paintUi();
+}
+
+void onOpenRecipeEc(lv_event_t *) {
+    hideKeyboard();
+    showRecipeEcStep(true);
 }
 
 void applyMlFromTa() {
@@ -218,13 +314,21 @@ void showKeyboard(lv_obj_t *ta, bool numberMode) {
     lv_keyboard_set_textarea(kb, ta);
     lv_obj_clear_flag(kb, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(kb);
+    if (ta == recipeEcTa_ && recipePanel_) {
+        lv_obj_align(recipePanel_, LV_ALIGN_TOP_MID, 0, 8);
+        if (recipeStep_) {
+            lv_obj_move_foreground(recipeStep_);
+        }
+        lv_obj_move_foreground(kb);
+        return;
+    }
     setContentHeight(true);
     lv_obj_scroll_to_view(ta, LV_ANIM_OFF);
 }
 
 void onTaFocused(lv_event_t *e) {
     lv_obj_t *ta = lv_event_get_target(e);
-    const bool num = (ta == mlTa);
+    const bool num = (ta == mlTa || ta == recipeEcTa_);
     showKeyboard(ta, num);
 }
 
@@ -258,6 +362,8 @@ void onKbReady(lv_event_t *e) {
                 snprintf(buf, sizeof(buf), "%.1f", draftMl_);
                 lv_textarea_set_text(mlTa, buf);
             }
+        } else if (activeTa == recipeEcTa_) {
+            applyRecipeEcFromTa();
         }
     }
     hideKeyboard();
@@ -310,7 +416,12 @@ void onSave(lv_event_t *) {
     NutrientConfig::syncToMaster();
     editingIx_ = SIZE_MAX;
     relayOpen_ = false;
-    paintUi();
+    if (recipeEcMissing()) {
+        paintUi();
+        showRecipeEcStep(true);
+        return;
+    }
+    NavShell::back();
 }
 
 void onMinusMl(lv_event_t *) {
@@ -378,6 +489,45 @@ void paintList() {
     refreshEmpty();
 
     lv_coord_t y = 0;
+
+    lv_obj_t *ecRow = lv_btn_create(contentHost);
+    lv_obj_remove_style_all(ecRow);
+    lv_obj_set_size(ecRow, kRowW, kRowH);
+    lv_obj_set_pos(ecRow, 8, y);
+    UiKit::forceOpaqueBg(ecRow, AppTheme::surface());
+    lv_obj_set_style_border_width(ecRow, 1, 0);
+    lv_obj_set_style_border_color(ecRow, AppTheme::gridLine(), 0);
+    lv_obj_set_style_radius(ecRow, 0, 0);
+    lv_obj_set_style_pad_all(ecRow, 0, 0);
+    UiKit::applyPressStyle(ecRow, AppTheme::surface(), AppTheme::surfaceAlt(), AppTheme::gridLine(),
+                           AppTheme::accent());
+    lv_obj_clear_flag(ecRow, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(ecRow, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(ecRow, onOpenRecipeEc, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t *ecLbl = lv_label_create(ecRow);
+    char ecBuf[48];
+    const float recEc = NutrientConfig::recipeEcUs();
+    if (recEc > 0.0f) {
+        snprintf(ecBuf, sizeof(ecBuf), Strings::tr(Msg::RecipeEcFmt), static_cast<double>(recEc));
+    } else {
+        snprintf(ecBuf, sizeof(ecBuf), "%s", Strings::tr(Msg::RecipeEcMissing));
+    }
+    lv_label_set_text(ecLbl, ecBuf);
+    lv_obj_set_style_text_color(ecLbl, recEc > 0.0f ? AppTheme::accent() : AppTheme::muted(), 0);
+    lv_obj_set_style_text_font(ecLbl, &lv_font_montserrat_20, 0);
+    lv_obj_set_width(ecLbl, kRowW - 44);
+    lv_label_set_long_mode(ecLbl, LV_LABEL_LONG_CLIP);
+    lv_obj_align(ecLbl, LV_ALIGN_LEFT_MID, kPad + 4, 0);
+    lv_obj_clear_flag(ecLbl, LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_t *ecChev = lv_label_create(ecRow);
+    lv_label_set_text(ecChev, LV_SYMBOL_RIGHT);
+    lv_obj_set_style_text_color(ecChev, AppTheme::muted(), 0);
+    lv_obj_set_style_text_font(ecChev, &lv_font_montserrat_20, 0);
+    lv_obj_align(ecChev, LV_ALIGN_RIGHT_MID, -kPad, 0);
+    lv_obj_clear_flag(ecChev, LV_OBJ_FLAG_CLICKABLE);
+    y += kRowStep;
 
     const size_t n = NutrientConfig::listCount();
     for (size_t i = 0; i < n; ++i) {
@@ -688,6 +838,10 @@ lv_obj_t *Screens::createNutrients(lv_obj_t *parent) {
     mlTa = nullptr;
     nameTa = nullptr;
     pctDetailLbl = nullptr;
+    recipeStep_ = nullptr;
+    recipePanel_ = nullptr;
+    recipeEcTa_ = nullptr;
+    recipeLeaveAfter_ = false;
     addBtn = nullptr;
     editingIx_ = SIZE_MAX;
     relayOpen_ = false;
@@ -741,6 +895,73 @@ lv_obj_t *Screens::createNutrients(lv_obj_t *parent) {
     UiKit::styleDarkKeyboard(kb);
     lv_obj_add_event_cb(kb, onKbReady, LV_EVENT_READY, nullptr);
     lv_obj_add_event_cb(kb, onKbReady, LV_EVENT_CANCEL, nullptr);
+
+    recipeStep_ = lv_obj_create(root_);
+    lv_obj_remove_style_all(recipeStep_);
+    lv_obj_set_size(recipeStep_, LCD_H_RES, LCD_V_RES);
+    lv_obj_set_pos(recipeStep_, 0, 0);
+    lv_obj_set_style_bg_color(recipeStep_, AppTheme::bg(), 0);
+    lv_obj_set_style_bg_opa(recipeStep_, LV_OPA_80, 0);
+    lv_obj_set_style_border_width(recipeStep_, 0, 0);
+    lv_obj_clear_flag(recipeStep_, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(recipeStep_, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(recipeStep_, LV_OBJ_FLAG_HIDDEN);
+
+    recipePanel_ = lv_obj_create(recipeStep_);
+    lv_obj_remove_style_all(recipePanel_);
+    lv_obj_set_size(recipePanel_, LCD_H_RES - 28, 268);
+    lv_obj_align(recipePanel_, LV_ALIGN_CENTER, 0, 0);
+    UiKit::forceOpaqueBg(recipePanel_, AppTheme::surface());
+    lv_obj_set_style_border_width(recipePanel_, 1, 0);
+    lv_obj_set_style_border_color(recipePanel_, AppTheme::gridLine(), 0);
+    lv_obj_clear_flag(recipePanel_, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *stepLbl = lv_label_create(recipePanel_);
+    lv_label_set_text(stepLbl, Strings::tr(Msg::RecipeEcStep));
+    lv_obj_set_style_text_color(stepLbl, AppTheme::muted(), 0);
+    lv_obj_set_style_text_font(stepLbl, &lv_font_montserrat_14, 0);
+    lv_obj_align(stepLbl, LV_ALIGN_TOP_MID, 0, 10);
+
+    lv_obj_t *title = lv_label_create(recipePanel_);
+    lv_label_set_text(title, Strings::tr(Msg::RecipeEcTitle));
+    lv_obj_set_style_text_color(title, AppTheme::text(), 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 32);
+
+    lv_obj_t *hint = lv_label_create(recipePanel_);
+    lv_label_set_text(hint, Strings::tr(Msg::RecipeEcHint));
+    lv_obj_set_style_text_color(hint, AppTheme::muted(), 0);
+    lv_obj_set_style_text_font(hint, &lv_font_montserrat_14, 0);
+    lv_obj_set_width(hint, LCD_H_RES - 56);
+    lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
+    lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 60);
+
+    recipeEcTa_ = lv_textarea_create(recipePanel_);
+    lv_textarea_set_one_line(recipeEcTa_, true);
+    lv_textarea_set_accepted_chars(recipeEcTa_, "0123456789.");
+    lv_textarea_set_max_length(recipeEcTa_, 8);
+    lv_textarea_set_placeholder_text(recipeEcTa_, "0");
+    lv_obj_set_size(recipeEcTa_, 220, 72);
+    lv_obj_align(recipeEcTa_, LV_ALIGN_TOP_MID, 0, 112);
+    lv_obj_set_style_bg_color(recipeEcTa_, AppTheme::surfaceAlt(), 0);
+    lv_obj_set_style_bg_opa(recipeEcTa_, LV_OPA_COVER, 0);
+    lv_obj_set_style_text_color(recipeEcTa_, AppTheme::accent(), 0);
+    lv_obj_set_style_text_font(recipeEcTa_, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_align(recipeEcTa_, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(recipeEcTa_, AppTheme::muted(), LV_PART_TEXTAREA_PLACEHOLDER);
+    lv_obj_set_style_text_font(recipeEcTa_, &lv_font_montserrat_48, LV_PART_TEXTAREA_PLACEHOLDER);
+    lv_obj_set_style_text_align(recipeEcTa_, LV_TEXT_ALIGN_CENTER, LV_PART_TEXTAREA_PLACEHOLDER);
+    lv_obj_set_style_border_width(recipeEcTa_, 1, 0);
+    lv_obj_set_style_border_color(recipeEcTa_, AppTheme::gridLine(), 0);
+    lv_obj_set_style_pad_all(recipeEcTa_, 6, 0);
+    lv_obj_clear_flag(recipeEcTa_, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(recipeEcTa_, onTaFocused, LV_EVENT_FOCUSED, nullptr);
+
+    lv_obj_t *saveEc =
+        UiKit::makePrimaryButton(recipePanel_, Strings::tr(Msg::NutSave), onRecipeEcSave);
+    lv_obj_set_size(saveEc, LCD_H_RES - 56, AppTheme::BTN_PRIMARY_H);
+    lv_obj_align(saveEc, LV_ALIGN_BOTTOM_MID, 0, -12);
 
     paintUi();
     bringChromeForward();

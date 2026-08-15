@@ -59,14 +59,16 @@ Lista **vacía por defecto**. Solo ítems que el usuario crea en Nutrientes (nom
 `proportion = mlPerLiter / Σ mlPerLiter`.
 
 ```json
-{"t":"cmd","action":"nutrient_proportions","totalMlPerLiter":12.0,"nutrients":[
+{"t":"cmd","action":"nutrient_proportions","totalMlPerLiter":12.0,"recipeEcUs":1525,"baseDose":1525,"nutrients":[
   {"name":"Grow","relayNumber":1,"mlPerLiter":5.0,"proportion":0.4167,"active":true},
   {"name":"Micro","relayNumber":2,"mlPerLiter":5.0,"proportion":0.4167,"active":true},
   {"name":"Bloom","relayNumber":3,"mlPerLiter":2.0,"proportion":0.1667,"active":true}
 ]}
 ```
 
-Sin nutrientes: `nutrients: []`, `totalMlPerLiter: 0`. Se reenvía al editar Nutrientes. El master debe mapear `action=nutrient_proportions` a `HydroControl::updateNutrientProportions`.
+`recipeEcUs` / `baseDose`: **EC de etiqueta para 1 L** de la receta (µS), campo HMI **Base EC/L**. Mismo valor; `baseDose` = nombre HIDROWAVE (`ECController`).  
+Master: `setBaseDose(baseDose)` y `setTotalMl(totalMlPerLiter)` → `k = baseDose / totalMl`. `0` = no definida (no pisar k).  
+Sin nutrientes: `nutrients: []`, `totalMlPerLiter: 0`. Se reenvía al editar Nutrientes o al Guardar Base EC/L. El master mapea `action=nutrient_proportions` a `HydroControl::updateNutrientProportions` + `applyRecipeGain`.
 
 ### Malha fechada / reservorio (display → master)
 

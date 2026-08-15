@@ -396,6 +396,9 @@ lv_obj_t *makeSeg(lv_obj_t *parent, const char *txt, lv_event_cb_t cb) {
     lv_label_set_text(lbl, txt);
     lv_obj_set_style_text_font(lbl, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(lbl, AppTheme::text(), 0);
+    lv_obj_set_width(lbl, 128);
+    lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(lbl, LV_LABEL_LONG_CLIP);
     lv_obj_center(lbl);
     return btn;
 }
@@ -533,11 +536,14 @@ lv_obj_t *Screens::createReservoir(lv_obj_t *parent) {
         lv_obj_set_style_border_width(row, 1, 0);
         lv_obj_set_style_border_color(row, AppTheme::gridLine(), 0);
         btnModeBatch = makeSeg(row, Strings::tr(Msg::ReservoirModeBatch), onModeBatch);
-        lv_obj_set_size(btnModeBatch, 100, AppTheme::TOUCH_MIN_H);
-        lv_obj_align(btnModeBatch, LV_ALIGN_LEFT_MID, 10, 0);
+        lv_obj_set_size(btnModeBatch, 136, AppTheme::TOUCH_MIN_H);
         btnModeRecirc = makeSeg(row, Strings::tr(Msg::ReservoirModeRecirc), onModeRecirc);
-        lv_obj_set_size(btnModeRecirc, 100, AppTheme::TOUCH_MIN_H);
-        lv_obj_align(btnModeRecirc, LV_ALIGN_LEFT_MID, 120, 0);
+        lv_obj_set_size(btnModeRecirc, 136, AppTheme::TOUCH_MIN_H);
+        const lv_coord_t gap = 10;
+        const lv_coord_t pairW = 136 * 2 + gap;
+        const lv_coord_t x0 = ((LCD_H_RES - 16) - pairW) / 2;
+        lv_obj_align(btnModeBatch, LV_ALIGN_LEFT_MID, x0, 0);
+        lv_obj_align(btnModeRecirc, LV_ALIGN_LEFT_MID, x0 + 136 + gap, 0);
     }
     y += step;
 

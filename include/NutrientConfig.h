@@ -61,6 +61,10 @@ float totalMlPerL();
 float listProportion(size_t ix);
 float listProportionPct(size_t ix);
 
+/** EC de etiqueta para 1 L de la receta (µS). 0 = no definida. Master: baseDose. */
+float recipeEcUs();
+void setRecipeEcUs(float us);
+
 /** ml/L del nutriente asignado a ese canal bomba (0 si ninguno). */
 float mlPerLForChannel(DoseChannel ch);
 

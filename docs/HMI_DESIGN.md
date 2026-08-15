@@ -111,7 +111,7 @@ Monitoring 2x2
   │     ├─ Controle
   │     │     ├─ Alvo            ← Setpoint + banda muerta (±)
   │     │     ├─ Auto EC/pH · Consumo EC 24h · Consumo pH 24h
-  │     │     └─ Reservorio      ← volumen · homo · Batch|Recirc · gaps
+  │     │     └─ Reservorio      ← volumen · homo · Lote|Recirc · gaps
   │     ├─ Atlas                 ← relé1…8 → Nombre · Accionamiento
   │     ├─ Dosificación          ← Nutrientes | Manual | pH Up/Down → PhPumpActions (Relé + hub bomba)
   │     ├─ Ajuste                ← WiFi · Idioma · TZ · Retroiluminacion · Reset

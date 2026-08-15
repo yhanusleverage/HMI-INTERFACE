@@ -16,6 +16,7 @@ float ecLo_ = 1580.0f;
 float ecHi_ = 1600.0f;
 float phLo_ = 5.95f;
 float phHi_ = 6.05f;
+float recipeEcUs_ = 0.0f;
 
 struct Item {
     char name[NUTRIENT_NAME_LEN];
@@ -109,6 +110,7 @@ void NutrientConfig::load() {
     phHi_ = prefs.getFloat("nph_hi", 6.05f);
     phUpRelay_ = clampRelayOrZero(prefs.getUChar("nph_up_r", 0));
     phDownRelay_ = clampRelayOrZero(prefs.getUChar("nph_dn_r", 0));
+    recipeEcUs_ = clampf(prefs.getFloat("nrec_ec", 0.0f), 0.0f, 5000.0f);
 
     count_ = prefs.getUChar("nut_n", 0);
     if (count_ > NUTRIENT_MAX) {
@@ -194,6 +196,7 @@ void NutrientConfig::save() {
     prefs.putFloat("nph_hi", phHi_);
     prefs.putUChar("nph_up_r", phUpRelay_);
     prefs.putUChar("nph_dn_r", phDownRelay_);
+    prefs.putFloat("nrec_ec", recipeEcUs_);
     prefs.putUChar("nut_n", static_cast<uint8_t>(count_));
     for (size_t i = 0; i < count_; ++i) {
         char nk[12];
@@ -460,6 +463,13 @@ bool NutrientConfig::listRemove(size_t ix) {
     persistAndSync();
     clearPumpLabelIfNoNutrient(oldRelay);
     return true;
+}
+
+float NutrientConfig::recipeEcUs() { return recipeEcUs_; }
+
+void NutrientConfig::setRecipeEcUs(float us) {
+    recipeEcUs_ = clampf(us, 0.0f, 5000.0f);
+    persistAndSync();
 }
 
 float NutrientConfig::totalMlPerL() {

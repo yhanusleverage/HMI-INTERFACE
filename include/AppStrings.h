@@ -275,6 +275,11 @@ enum class Msg : uint16_t {
     ConsumoPh24h,
     CalibHwModuleHint,
     AtlasHwOfflineHint,
+    RecipeEcStep,
+    RecipeEcTitle,
+    RecipeEcHint,
+    RecipeEcMissing,
+    RecipeEcFmt,
     Count
 };
 

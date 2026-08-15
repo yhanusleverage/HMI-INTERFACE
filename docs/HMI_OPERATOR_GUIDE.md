@@ -46,7 +46,7 @@ Entrada: **≡** → SETTINGS. Salida: **Atras**.
 
 ## 3. Malha fechada — controles
 
-**Controle → Reservorio:** volumen · homo · delay · Batch\|Recirc · gaps.  
+**Controle → Reservorio:** volumen · homo · delay · Lote\|Recirc · gaps.  
 **Controle → Auto:** **Cadeado** (`Cerrado` \| `Abierto`) = solo trava UI de config. **Armado** (`INACTIVO` \| `ACTIVO`) = autoriza malla al Master (`dosingArmed`). Pasar a ACTIVO pide confirmación a pantalla completa; volver a INACTIVO es inmediato. Central muestra Armado como **flag** (sin tap). Con Cadeado **Abierto**, Cadeado/Armado scroll con el resto. Con Cadeado **Cerrado**, filas sticky bajo header + cortina: intervalos / Auto EC·pH / Consumo EC·pH 24h / agresividad / Guardar inaccesibles; Armado sigue tocable.
 
 **Consumo EC 24h** (bajo Auto EC) y **Consumo pH 24h** (bajo Auto pH): capas avanzadas **independientes**. Deadband = banda Alvo (EC o pH). Con ON, el Master registra valor al inicio de ventana y a las 24 h valida el Δ (EC: hambre/dilución; pH: Up/Down). No cambian `autoEcInterval` / `autoPhInterval`. El tick Auto sigue durante la ventana.  
@@ -57,7 +57,7 @@ NVS + UART `loop_control`.
 | Volumen (L) | 50 | Agua asumida para dosis |
 | Homogenización (s) | 60 | Espera tras inyectar |
 | Delay dose (s) | 60 | Espera / 2ª lectura |
-| Batch \| Recirc | Batch | Recirc añade gaps / pulsos |
+| Lote \| Recirc | Lote | Recirc añade gaps / pulsos |
 | Gap nutrientes (s) | 3 | Pausa entre bombas |
 | ml por pulso | 2.0 | Inyección partida |
 | Gap pulsos (s) | 2 | Pausa entre pulsos |

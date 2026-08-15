@@ -202,6 +202,8 @@ void MasterLink::sendNutrientProportions() {
     doc["t"] = "cmd";
     doc["action"] = "nutrient_proportions";
     doc["totalMlPerLiter"] = NutrientConfig::totalMlPerL();
+    doc["recipeEcUs"] = NutrientConfig::recipeEcUs();
+    doc["baseDose"] = NutrientConfig::recipeEcUs();
     JsonArray arr = doc["nutrients"].to<JsonArray>();
     const size_t n = NutrientConfig::listCount();
     for (size_t i = 0; i < n; ++i) {

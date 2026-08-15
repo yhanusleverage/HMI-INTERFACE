@@ -3,8 +3,9 @@
 **Canónico Master ← Display** — checklist único de interoperabilidad / compatibilidad.  
 **Fecha:** 2026-08-10  
 **Audiencia:** quien porta el bridge UART y los lazos en el **Master real** (HIDROWAVE de producción).  
+**Mapa único HMI ↔ Master (contrato + matriz + Base EC/L):** [`HANDOFF.md`](HANDOFF.md). Este doc = checklist extra al portar Master prod.  
 **HMI:** ya emite el contrato (`ESP-SENSORS-main`). **No tocar UI** para esta sync.  
-**Importante:** la carpeta `ESP-HIDROWAVE/` embebida en este zip puede estar **desactualizada** — no es la verdad. Anexo JSON: [`HMI_UART.md`](HMI_UART.md). Mapa HMI / DoD cable: [`HANDOFF.md`](HANDOFF.md).
+**Anexo JSON:** [`HMI_UART.md`](HMI_UART.md). Zip `ESP-HIDROWAVE/`: bridge con `applyRecipeGain` (2026-08-15); prod debe igualar.
 
 ---
 
@@ -57,7 +58,7 @@ Líneas JSON + `\n`, baud **115200**. Tras cada cmd de proceso: `{"t":"cmd_ack",
 | `dose` | HMI → Master | Dosar canal `R1`…`R6` por `ml` | v1 |
 | `dose_hold` | HMI → Master | Hold on/off canal | v1 |
 | `dose_stop` | HMI → Master | Parar canal / cancelar secuencia | v1 |
-| `nutrient_proportions` | HMI → Master | `updateNutrientProportions` | v1 |
+| `nutrient_proportions` | HMI → Master | `updateNutrientProportions` + `applyRecipeGain` (`baseDose`/`recipeEcUs`, `totalMlPerLiter`) | v1 |
 | `setpoint` | HMI → Master | EC → lazo; pH → runtime o NVS | v1 EC / PARCIAL pH |
 | `loop_control` | HMI → Master | Ver §3 | v1 (núcleo Auto) |
 | `calib` | HMI → Master | Ack; UI HMI hoy bloqueada (módulo físico) | diferible |
