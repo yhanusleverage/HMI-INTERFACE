@@ -66,7 +66,9 @@ Email SoftAP = **opcional / legado**. Ownership = `owner_id` vía `claim_device`
 
 ## UART
 
-Ver [`HMI_UART.md`](HMI_UART.md) (`wifi_config`, `sys_info`). Código Master: `MasterWifiProvision` + `HmiUartBridge`.
+Ver [`HMI_UART.md`](HMI_UART.md) (`wifi_config`, `sys_info` con snapshot). Código Master: `HmiUartBridge` (mismo NVS SoftAP).
+
+**Bidireccional:** si Master ya tiene WiFi/perfil → `sys_info` precarga HMI. Si no → usuario llena HMI → `wifi_config`.
 
 ## Docs Master
 

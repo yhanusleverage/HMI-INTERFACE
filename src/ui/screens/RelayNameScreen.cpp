@@ -39,7 +39,9 @@ void onKbDone(lv_event_t *e) {
         strncpy(draft_, lv_textarea_get_text(nameTa), RELAY_ALIAS_NAME_LEN - 1);
         draft_[RELAY_ALIAS_NAME_LEN - 1] = '\0';
         RelayAliasConfig::setName(NavShell::currentAtlasMac(), NavShell::currentAtlasRelay(), draft_);
-        setStatus(UiKit::PumpUiStatus::Done, Strings::tr(Msg::PumpNameSaved));
+        hideKb();
+        NavShell::back();
+        return;
     }
     hideKb();
 }
@@ -60,8 +62,8 @@ void onSave(lv_event_t *) {
         draft_[RELAY_ALIAS_NAME_LEN - 1] = '\0';
     }
     RelayAliasConfig::setName(NavShell::currentAtlasMac(), NavShell::currentAtlasRelay(), draft_);
-    setStatus(UiKit::PumpUiStatus::Done, Strings::tr(Msg::PumpNameSaved));
     hideKb();
+    NavShell::back();
 }
 
 }  // namespace

@@ -155,6 +155,8 @@ void onCalibApply(lv_event_t *) {
     }
     hideKb();
     PumpConfig::applyCalibMeasure(ch_, measuredMl_, CALIB_SEC);
+    MasterLink::sendPumpFlowCalib(doseChannelKey(ch_), PumpConfig::flowMlPerMin(ch_), measuredMl_,
+                                  CALIB_SEC);
     refreshFlowLabel();
     char buf[64];
     snprintf(buf, sizeof(buf), Strings::tr(Msg::PumpCalibDoneFmt), PumpConfig::flowMlPerMin(ch_));

@@ -1,13 +1,17 @@
 #include "MasterLink.h"
 #include "BoardPins.h"
 #include "DataStore.h"
+#include "MasterWifiDraft.h"
 #include "NutrientConfig.h"
+#include "PumpConfig.h"
+#include "DoseChannel.h"
 #include "ReservoirConfig.h"
 #include "SlaveInventory.h"
 #include "Config.h"
 #include <ArduinoJson.h>
 #include <HardwareSerial.h>
 #include <cstring>
+#include <math.h>
 
 static HardwareSerial MasterSerial(1);
 static char lineBuf[768];
@@ -20,6 +24,81 @@ static bool masterSysInfoValidFlag = false;
 static uint8_t wifiConfigAckState_ = 0;
 static bool processBridgeOk_ = false;
 static uint8_t lastProcessAckState_ = 0;
+#if UART_LINK_DEBUG
+static uint32_t rxByteCount = 0;
+static uint32_t rxLineCount = 0;
+static unsigned long lastDbgMs = 0;
+#endif
+
+static void logLinePreview(const char *prefix, const char *line) {
+    char preview[97];
+    size_t n = strlen(line);
+    if (n > 96) {
+        n = 96;
+    }
+    memcpy(preview, line, n);
+    preview[n] = '\0';
+    Serial.printf("%s (len=%u): %s%s\n", prefix, static_cast<unsigned>(strlen(line)), preview,
+                  strlen(line) > 96 ? "..." : "");
+}
+
+static void markLinkAlive() {
+    lastRxMs = millis();
+    linked = true;
+    DataStore::instance().setLinkOk(true);
+}
+
+static void logRxSummary(const char *line, const char *t) {
+#if !UART_LINK_DEBUG
+    (void)line;
+#endif
+    if (strcmp(t, "telemetry") == 0) {
+        JsonDocument doc;
+        if (deserializeJson(doc, line)) {
+            return;
+        }
+        const float ec = doc["ec"] | NAN;
+        const float ph = doc["ph"] | NAN;
+        const float temp = doc["temp_agua"] | NAN;
+        Serial.print("[UART RX] telemetry");
+        if (!isnan(ec)) {
+            Serial.printf(" ec=%.0f", ec);
+        }
+        if (!isnan(ph)) {
+            Serial.printf(" ph=%.2f", ph);
+        }
+        if (!isnan(temp)) {
+            Serial.printf(" temp=%.1f", temp);
+        }
+        Serial.println(" → LIVE");
+        return;
+    }
+    if (strcmp(t, "cmd_ack") == 0) {
+        JsonDocument doc;
+        if (deserializeJson(doc, line)) {
+            return;
+        }
+        // ArduinoJson: bool true con "| 0" cae al default 0 — usar bool
+        const bool ok = doc["ok"] | false;
+        Serial.printf("[UART RX] cmd_ack action=%s ok=%d\n", doc["action"] | "", ok ? 1 : 0);
+        return;
+    }
+    if (strcmp(t, "sys_info") == 0) {
+        Serial.println("[UART RX] sys_info");
+        return;
+    }
+    if (strcmp(t, "slaves") == 0) {
+        Serial.println("[UART RX] slaves");
+        return;
+    }
+    if (strcmp(t, "wifi_config_ack") == 0) {
+        Serial.println("[UART RX] wifi_config_ack");
+        return;
+    }
+#if UART_LINK_DEBUG
+    logLinePreview("[UART RX]", line);
+#endif
+}
 
 static void emitJson(JsonDocument &doc) {
     serializeJson(doc, MasterSerial);
@@ -47,24 +126,33 @@ void MasterLink::begin() {
     SlaveInventory::begin();
     Serial.printf("[UART] master link RX=%d TX=%d baud=%d\n",
                   MASTER_UART_RX, MASTER_UART_TX, MASTER_UART_BAUD);
+#if UART_LINK_DEBUG
+    Serial.println("[UART DBG] cable: HMI TX(17)->Master RX(17), Master TX(18)->HMI RX(18), GND");
+#endif
 }
 
 static void handleLine(const char *line) {
     JsonDocument doc;
     const DeserializationError err = deserializeJson(doc, line);
     if (err) {
+#if UART_LINK_DEBUG
+        Serial.printf("[UART RX] JSON invalido: %s\n", err.c_str());
+        logLinePreview("[UART RX] raw", line);
+#endif
         return;
     }
     const char *t = doc["t"] | "";
+#if UART_LINK_DEBUG
+    rxLineCount++;
+    logRxSummary(line, t);
+#endif
     if (strcmp(t, "cmd_ack") == 0) {
         const bool ok = doc["ok"] | false;
         lastProcessAckState_ = ok ? 1 : 2;
         if (ok) {
             processBridgeOk_ = true;
         }
-        lastRxMs = millis();
-        linked = true;
-        DataStore::instance().setLinkOk(true);
+        markLinkAlive();
         return;
     }
     if (strcmp(t, "wifi_config_ack") == 0) {
@@ -75,9 +163,7 @@ static void handleLine(const char *line) {
             masterDeviceIdBuf[sizeof(masterDeviceIdBuf) - 1] = '\0';
             masterSysInfoValidFlag = true;
         }
-        lastRxMs = millis();
-        linked = true;
-        DataStore::instance().setLinkOk(true);
+        markLinkAlive();
         return;
     }
     if (strcmp(t, "sys_info") == 0) {
@@ -93,16 +179,17 @@ static void handleLine(const char *line) {
         if (doc["process_bridge"] | false) {
             processBridgeOk_ = true;
         }
-        lastRxMs = millis();
-        linked = true;
-        DataStore::instance().setLinkOk(true);
+        const bool hasWifi = doc["has_wifi"] | false;
+        const char *ssid = hasWifi ? (doc["ssid"] | "") : "";
+        const char *pass = hasWifi ? (doc["password"] | "") : "";
+        MasterWifiDraft::applyFromMaster(ssid, pass, doc["email"] | "", doc["device_name"] | "",
+                                         doc["location"] | "");
+        markLinkAlive();
         return;
     }
     if (strcmp(t, "slaves") == 0) {
         SlaveInventory::applyFromJson(line);
-        lastRxMs = millis();
-        linked = true;
-        DataStore::instance().setLinkOk(true);
+        markLinkAlive();
         return;
     }
     if (strcmp(t, "telemetry") != 0) {
@@ -113,25 +200,51 @@ static void handleLine(const char *line) {
     const float temp = doc["temp_agua"] | NAN;
     const float orp = doc["orp"] | NAN;
     const float doMgL = doc["do"] | NAN;
-    if (isnan(ph) && isnan(ec) && isnan(temp) && isnan(orp) && isnan(doMgL)) {
+
+    /* Flags aditivos (Master 2026-09). Sin flag: válido si el campo numérico llegó. */
+    const bool phOk = doc.containsKey("ph_valid") ? (doc["ph_valid"] | false) : !isnan(ph);
+    const bool ecOk = doc.containsKey("ec_valid") ? (doc["ec_valid"] | false) : !isnan(ec);
+    const bool tempOk =
+        doc.containsKey("temp_valid") ? (doc["temp_valid"] | false) : !isnan(temp);
+
+    if (!phOk && !ecOk && !tempOk && isnan(orp) && isnan(doMgL)) {
+        /* Solo flags false / vacío — aún así marcar link vivo y limpiar PV. */
+        DataStore::instance().setTelemetry(NAN, NAN, NAN, NAN, NAN, DataSource::Live, false, false,
+                                           false);
+        markLinkAlive();
         return;
     }
+
     DataStore &store = DataStore::instance();
-    const TelemetrySnapshot cur = store.snapshot();
-    store.setTelemetry(isnan(ph) ? cur.ph : ph,
-                       isnan(ec) ? cur.ec : ec,
-                       isnan(temp) ? cur.tempAgua : temp,
-                       isnan(orp) ? cur.orp : orp,
-                       isnan(doMgL) ? cur.doMgL : doMgL,
-                       DataSource::Live);
-    lastRxMs = millis();
-    linked = true;
-    store.setLinkOk(true);
+    store.setTelemetry(phOk ? ph : NAN, ecOk ? ec : NAN, tempOk ? temp : NAN, orp, doMgL,
+                       DataSource::Live, phOk, ecOk, tempOk);
+    markLinkAlive();
+}
+
+static void maybeLogUartDebug(unsigned long nowMs) {
+#if UART_LINK_DEBUG
+    if (lastDbgMs != 0 && (nowMs - lastDbgMs) < UART_LINK_DEBUG_INTERVAL_MS) {
+        return;
+    }
+    lastDbgMs = nowMs;
+    Serial.printf("[UART DBG] rx_bytes=%lu lines=%lu link=%s last_rx=%lums ago\n",
+                  static_cast<unsigned long>(rxByteCount),
+                  static_cast<unsigned long>(rxLineCount), linked ? "OK" : "NO",
+                  lastRxMs != 0 ? static_cast<unsigned long>(nowMs - lastRxMs) : 0UL);
+    if (rxByteCount == 0) {
+        Serial.println("[UART DBG] sin bytes RX — Master TX(18)->HMI RX(18) + GND?");
+    }
+#else
+    (void)nowMs;
+#endif
 }
 
 void MasterLink::loop() {
     while (MasterSerial.available() > 0) {
         const char c = static_cast<char>(MasterSerial.read());
+#if UART_LINK_DEBUG
+        rxByteCount++;
+#endif
         if (c == '\n' || c == '\r') {
             if (lineLen > 0) {
                 lineBuf[lineLen] = '\0';
@@ -143,11 +256,20 @@ void MasterLink::loop() {
         if (lineLen + 1 < sizeof(lineBuf)) {
             lineBuf[lineLen++] = c;
         } else {
+#if UART_LINK_DEBUG
+            Serial.println("[UART RX] linea truncada (>768 B)");
+#endif
             lineLen = 0;
         }
     }
 
-    if (linked && lastRxMs != 0 && (millis() - lastRxMs) > UART_LINK_TIMEOUT_MS) {
+    const unsigned long nowMs = millis();
+    maybeLogUartDebug(nowMs);
+
+    if (linked && lastRxMs != 0 && (nowMs - lastRxMs) > UART_LINK_TIMEOUT_MS) {
+#if UART_LINK_DEBUG
+        Serial.println("[UART] link LOST — sin RX del Master >5s (pin 18 / GND?)");
+#endif
         linked = false;
         processBridgeOk_ = false;
         DataStore::instance().setLinkOk(false);
@@ -197,6 +319,18 @@ void MasterLink::sendDoseHold(const char *channel, bool on) {
     emitJson(doc);
 }
 
+void MasterLink::sendPumpFlowCalib(const char *channel, float flowMlPerMin, float measuredMl,
+                                   float durationSec) {
+    JsonDocument doc;
+    doc["t"] = "cmd";
+    doc["action"] = "pump_flow_calib";
+    doc["channel"] = channel ? channel : "";
+    doc["flowMlPerMin"] = flowMlPerMin;
+    doc["measuredMl"] = measuredMl;
+    doc["durationSec"] = durationSec;
+    emitJson(doc);
+}
+
 void MasterLink::sendNutrientProportions() {
     JsonDocument doc;
     doc["t"] = "cmd";
@@ -218,6 +352,13 @@ void MasterLink::sendNutrientProportions() {
         o["mlPerLiter"] = ml;
         o["proportion"] = NutrientConfig::listProportion(i);
         o["active"] = true;
+        const uint8_t rn = NutrientConfig::listRelayNumber(i);
+        if (rn >= 1 && rn <= PUMP_RELAY_COUNT) {
+            const float qMin = PumpConfig::flowMlPerMin(doseFromRelayNumber(rn));
+            if (qMin > 0.01f) {
+                o["flowRate"] = qMin / 60.0f;
+            }
+        }
     }
     emitJson(doc);
 }
@@ -296,6 +437,20 @@ void MasterLink::sendWifiConfig(const char *ssid, const char *password, const ch
 uint8_t MasterLink::wifiConfigAckState() { return wifiConfigAckState_; }
 
 void MasterLink::clearWifiConfigAck() { wifiConfigAckState_ = 0; }
+
+void MasterLink::sendMasterReboot() {
+    JsonDocument doc;
+    doc["t"] = "cmd";
+    doc["action"] = "master_reboot";
+    emitJson(doc);
+}
+
+void MasterLink::sendFactoryReset() {
+    JsonDocument doc;
+    doc["t"] = "cmd";
+    doc["action"] = "factory_reset";
+    emitJson(doc);
+}
 
 void MasterLink::sendRelayLocal(uint8_t relay, const char *action, int durationSec) {
     JsonDocument doc;

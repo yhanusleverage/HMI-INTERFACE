@@ -145,10 +145,14 @@ void setup() {
     RelayActuationLock::begin();
     RelayCycleConfig::begin();
     WifiConfig::begin();
+#if !UART_BENCH
     if (WifiConfig::configured()) {
         WifiConfig::connectSaved();
     }
     Simulator::begin();
+#else
+    Serial.println("[UART BENCH] HMI — solo MasterLink + UI + logs RX/TX (sin WiFi/SIM)");
+#endif
     MasterLink::begin();
     NutrientConfig::syncToMaster();
     ReservoirConfig::syncToMaster();
@@ -165,11 +169,15 @@ void setup() {
 
 void loop() {
     pollSerialCmds();
+#if !UART_BENCH
     Simulator::tick();
+#endif
     MasterLink::loop();
+#if !UART_BENCH
     // RulesEngine::tick(); /* desactivado — Rules fuera del HMI */
     RelayCycleConfig::tick();
     WifiConfig::loop();
+#endif
     if (DisplayHal::ready()) {
         NavShell::tick();
         DisplayHal::loop();

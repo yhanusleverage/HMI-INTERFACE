@@ -2,12 +2,12 @@
 #define FACTORY_RESET_H
 
 /**
- * Borra datos de usuario en NVS (idioma, fuso, setup, WiFi, niveles/calib)
- * y reinicia. Equivalente practico a "erase flash" de datos de app:
- * el firmware sigue; el HMI vuelve al wizard de primera vez.
+ * Borra datos de usuario en NVS del HMI (idioma, fuso, setup, WiFi…)
+ * y reinicia el display. Opcionalmente manda factory_reset al Master
+ * (limpia hydro_system — no erase flash).
  */
 namespace FactoryReset {
-void wipeAndReboot();
+void wipeAndReboot(bool alsoResetMaster = true);
 }
 
 #endif

@@ -153,12 +153,17 @@ void UiMirror::dump() {
         char valBuf[16];
         char spBuf[16];
         char rangeBuf[24];
-        if (isIntParam(id)) {
+        if (!isfinite(v)) {
+            snprintf(valBuf, sizeof(valBuf), "%8s", "--");
+        } else if (isIntParam(id)) {
             snprintf(valBuf, sizeof(valBuf), "%8.0f", v);
+        } else {
+            snprintf(valBuf, sizeof(valBuf), "%8.2f", v);
+        }
+        if (isIntParam(id)) {
             snprintf(spBuf, sizeof(spBuf), "%6.0f", cfg.setpoint);
             snprintf(rangeBuf, sizeof(rangeBuf), "%4.0f..%-4.0f", cfg.low, cfg.high);
         } else {
-            snprintf(valBuf, sizeof(valBuf), "%8.2f", v);
             snprintf(spBuf, sizeof(spBuf), "%6.2f", cfg.setpoint);
             snprintf(rangeBuf, sizeof(rangeBuf), "%4.1f..%-4.1f", cfg.low, cfg.high);
         }

@@ -31,6 +31,13 @@ void onBack(lv_event_t *) { NavShell::back(); }
 
 void onRestart(lv_event_t *) {
     UiKit::showRebootSplash(Strings::tr(Msg::RestartBtn));
+    if (MasterLink::linkOk()) {
+        MasterLink::sendMasterReboot();
+        delay(200);
+        MasterLink::loop();
+    }
+    /* También reinicia el display para re-sincronizar UART tras el Master. */
+    delay(300);
     ESP.restart();
 }
 

@@ -210,13 +210,17 @@ Manual Dose/Prime/Time/Calib: solo Armado **INACTIVO**.
 
 ## Gaps
 
-1. DoD en placa (humano).
-2. Master: **Auto pH runtime** (hoy no hay cálculo; solo NVS) + homo/gaps/pulsos/mode/delay.
-3. Deadband: quitar 50 fijo; siempre half-band Alvo.
-4. Calib sensor UART; reactivar `CalibScreen` cuando Master esté listo.
-5. Consumo EC/pH 24 h en Master **prod**.
-6. ORP/DO setpoint / telemetría si el producto lo pide.
-7. Rules web; HMI no hace ESP-NOW directo.
+1. DoD en placa (humano) — A1: **enchufar** sensores Modbus (DI GPIO26).
+2. ~~Master Auto pH runtime~~ — **actualizado 2026-09:** Master prod tiene `checkAutoPH()` / lazo; validar E2E.
+3. Deadband Alvo — Master bridge aplica `(hi-lo)/2`.
+4. Calib sensor UART; UI HMI cortina — OUT ahora.
+5. Consumo EC/pH 24 h — Master prod handlers existen; DoD.
+6. ORP/DO — fuera de producto F0.
+7. Rules editor — **WEB-ONLY**; HMI solo **candado** Atlas (paridad web) vía UART `locked` — ver Master `HANDOFF_MVP_WEB_HMI_PARITY.md`.
+8. Telemetría honesta: HMI debe consumir `ec_valid`/`ph_valid`/`temp_valid` (A3).
+
+Paridad operativa acotada (sin historial HMI, sin O2/O3):  
+`ESP-HIDROWAVE-main/docs/handoffs/HANDOFF_MVP_WEB_HMI_PARITY.md`.
 
 ---
 

@@ -64,6 +64,27 @@ const char *deviceName() { return name_; }
 
 const char *location() { return loc_; }
 
+void applyFromMaster(const char *ssid, const char *pass, const char *email,
+                     const char *deviceName, const char *location) {
+    if (ssid && ssid[0] && !hasNetwork_) {
+        setNetwork(ssid, pass ? pass : "");
+        if (!WifiConfig::configured()) {
+            if (WifiConfig::save(ssid_, pass_)) {
+                WifiConfig::connectSaved();
+            }
+        }
+    }
+    if (email && email[0] && !email_[0]) {
+        copyStr(email_, sizeof(email_), email);
+    }
+    if (deviceName && deviceName[0] && !name_[0]) {
+        copyStr(name_, sizeof(name_), deviceName);
+    }
+    if (location && location[0] && !loc_[0]) {
+        copyStr(loc_, sizeof(loc_), location);
+    }
+}
+
 bool commitProvision() {
     if (!hasNetwork_) {
         return false;

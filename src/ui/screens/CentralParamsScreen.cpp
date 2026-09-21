@@ -14,6 +14,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <math.h>
 
 /**
  * Central — landscape lógico 480×320.
@@ -255,7 +256,7 @@ void Screens::refreshCentral(lv_obj_t *root) {
     if (tempValLbl && tempUnitLbl) {
         char tbuf[16];
         const char *unit = "";
-        if (DisplayConfig::showTemp()) {
+        if (DisplayConfig::showTemp() && isfinite(snap.tempAgua)) {
             UnitsConfig::formatTemp(snap.tempAgua, tbuf, sizeof(tbuf));
             unit = UnitsConfig::tempUnitSuffix();
         } else {
@@ -311,6 +312,25 @@ void Screens::refreshCentral(lv_obj_t *root) {
 
         char buf[32];
         const float v = store.value(id);
+        if (!isfinite(v)) {
+            if (!cells[i].value) {
+                continue;
+            }
+            const char *cur = lv_label_get_text(cells[i].value);
+            if (!cur || strcmp(cur, "--") != 0) {
+                lv_label_set_text(cells[i].value, "--");
+            }
+            lv_obj_set_style_text_color(cells[i].value, AppTheme::muted(), 0);
+            lv_obj_set_style_border_width(cells[i].box, 1, 0);
+            lv_obj_set_style_border_color(cells[i].box, AppTheme::gridLine(), 0);
+            if (cells[i].badge) {
+                const char *b = lv_label_get_text(cells[i].badge);
+                if (b && b[0]) {
+                    lv_label_set_text(cells[i].badge, "");
+                }
+            }
+            continue;
+        }
         if (id == ParamId::Ec) {
             UnitsConfig::formatEc(v, buf, sizeof(buf));
         } else if (id == ParamId::Orp) {

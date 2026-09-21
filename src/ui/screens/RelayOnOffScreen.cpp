@@ -30,7 +30,13 @@ bool isPlaceholderMac(const char *mac) {
 
 bool canSend() {
     const char *mac = NavShell::currentAtlasMac();
-    return online_ && mac && mac[0] && !isPlaceholderMac(mac) && strcmp(mac, "local") != 0;
+    if (!mac || !mac[0] || isPlaceholderMac(mac)) {
+        return false;
+    }
+    if (strcmp(mac, "local") == 0) {
+        return !SlaveInventory::isRelayLocked(mac, NavShell::currentAtlasRelay());
+    }
+    return online_ && !SlaveInventory::isRelayLocked(mac, NavShell::currentAtlasRelay());
 }
 
 void refreshLockBanner() {
@@ -41,7 +47,17 @@ void refreshLockBanner() {
     const uint8_t r = NavShell::currentAtlasRelay();
     bool show = false;
     const char *txt = nullptr;
-    if (mac && RelayActuationLock::timerActive(mac, r)) {
+    static char ruleBuf[48];
+    if (mac && SlaveInventory::isRelayLocked(mac, r)) {
+        const char *lab = SlaveInventory::relayLockLabel(mac, r);
+        if (lab && lab[0]) {
+            snprintf(ruleBuf, sizeof(ruleBuf), "%s: %s", Strings::tr(Msg::RelaysLockByRule), lab);
+            txt = ruleBuf;
+        } else {
+            txt = Strings::tr(Msg::RelaysLockByRule);
+        }
+        show = true;
+    } else if (mac && RelayActuationLock::timerActive(mac, r)) {
         txt = Strings::tr(Msg::RelaysLockTimerActive);
         show = true;
     } else if (mac) {
@@ -97,6 +113,15 @@ void syncFromInventory() {
     if (!mac || !mac[0] || isPlaceholderMac(mac)) {
         return;
     }
+    if (strcmp(mac, "local") == 0) {
+        online_ = true;
+        const size_t ix = SlaveInventory::localIndex();
+        const SlaveInventory::Target *t = (ix != SIZE_MAX) ? SlaveInventory::at(ix) : nullptr;
+        if (t && r < SlaveInventory::kMaxRelays) {
+            relayOn_ = t->relayOn[r];
+        }
+        return;
+    }
     const size_t nT = SlaveInventory::count();
     for (size_t i = 0; i < nT; ++i) {
         const SlaveInventory::Target *t = SlaveInventory::at(i);
@@ -118,6 +143,23 @@ void sendState(bool on) {
     }
     const char *mac = NavShell::currentAtlasMac();
     const uint8_t r = NavShell::currentAtlasRelay();
+    if (SlaveInventory::isRelayLocked(mac, r)) {
+        if (statusLbl_) {
+            lv_label_set_text(statusLbl_, Strings::tr(Msg::RelaysLockByRule));
+            lv_obj_set_style_text_color(statusLbl_, AppTheme::warn(), 0);
+        }
+        return;
+    }
+    if (strcmp(mac, "local") == 0) {
+        relayOn_ = on;
+        paintToggle();
+        MasterLink::sendRelayLocal(r, on ? "on" : "off", 0);
+        if (statusLbl_) {
+            lv_label_set_text(statusLbl_, Strings::tr(Msg::RelaysOnline));
+            lv_obj_set_style_text_color(statusLbl_, AppTheme::text(), 0);
+        }
+        return;
+    }
     if (RelayActuationLock::timerActive(mac, r)) {
         if (statusLbl_) {
             lv_label_set_text(statusLbl_, Strings::tr(Msg::RelaysLockTimerActive));

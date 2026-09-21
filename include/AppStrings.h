@@ -253,6 +253,8 @@ enum class Msg : uint16_t {
     RelaysTimerPhaseOffFmt,
     RelaysLockTimerActive,
     RelaysLockCycleActive,
+    RelaysLockByRule,
+    MasterLocalRelays,
     CalibPointPh4,
     CalibPointPh7,
     CalibPointEc1413,

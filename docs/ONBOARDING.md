@@ -30,7 +30,7 @@ SETTINGS → Ajuste (WiFi · Idioma · TZ · Retroiluminacion · Reset fábrica)
 
 WiFi en Ajuste = mismo `WifiIntroLayout` que el wizard (solo SSID/clave; perfil cloud solo en paso 5/5).
 
-**Reset fábrica:** borra NVS (`hidro_hmi` + `wifi_cfg`) → wizard. No borra firmware ni registro cloud del Master.
+**Reset fábrica:** borra NVS HMI (`hidro_hmi` + `wifi_cfg`) **y** manda `factory_reset` al Master (limpia `hydro_system`). Firmware/SPIFFS intactos. Wizard de nuevo.
 
 ## Código
 

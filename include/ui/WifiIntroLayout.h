@@ -25,6 +25,8 @@ namespace WifiIntroLayout {
 
 lv_obj_t *create(lv_obj_t *parent, const WifiIntroConfig &cfg);
 void refresh(lv_obj_t *root);
+/** Si la UI aún no eligió red, aplica SSID/pass del Master (sys_info). */
+void applyPrefill(const char *ssid, const char *pass);
 
 }  // namespace WifiIntroLayout
 

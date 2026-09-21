@@ -42,7 +42,9 @@ void onKbDone(lv_event_t *e) {
         strncpy(draft_, lv_textarea_get_text(nameTa), PUMP_LABEL_LEN - 1);
         draft_[PUMP_LABEL_LEN - 1] = '\0';
         PumpConfig::setLabel(ch_, draft_);
-        setStatus(UiKit::PumpUiStatus::Done, Strings::tr(Msg::PumpNameSaved));
+        hideKb();
+        NavShell::back();
+        return;
     }
     hideKb();
 }
@@ -63,8 +65,8 @@ void onSave(lv_event_t *) {
         draft_[PUMP_LABEL_LEN - 1] = '\0';
     }
     PumpConfig::setLabel(ch_, draft_);
-    setStatus(UiKit::PumpUiStatus::Done, Strings::tr(Msg::PumpNameSaved));
     hideKb();
+    NavShell::back();
 }
 
 }  // namespace

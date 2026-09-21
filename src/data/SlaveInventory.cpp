@@ -20,6 +20,18 @@ void copyStr(char *dst, size_t n, const char *src) {
     dst[n - 1] = '\0';
 }
 
+const SlaveInventory::Target *findByMac(const char *mac) {
+    if (!mac || !mac[0]) {
+        return nullptr;
+    }
+    for (size_t i = 0; i < count_; ++i) {
+        if (strcmp(targets_[i].mac, mac) == 0) {
+            return &targets_[i];
+        }
+    }
+    return nullptr;
+}
+
 }  // namespace
 
 void SlaveInventory::begin() { clear(); }
@@ -65,8 +77,21 @@ void SlaveInventory::applyFromJson(const char *jsonLine) {
         JsonArray rs = o["relays"].as<JsonArray>();
         for (int i = 0; i < nr; ++i) {
             t.relayOn[i] = false;
-            if (!rs.isNull() && i < static_cast<int>(rs.size())) {
-                t.relayOn[i] = (rs[i].as<int>() != 0);
+            t.relayLocked[i] = false;
+            t.lockReason[i][0] = '\0';
+            t.lockLabel[i][0] = '\0';
+            if (rs.isNull() || i >= static_cast<int>(rs.size())) {
+                continue;
+            }
+            JsonVariant v = rs[i];
+            if (v.is<JsonObject>()) {
+                JsonObject ro = v.as<JsonObject>();
+                t.relayOn[i] = (ro["on"] | 0) != 0;
+                t.relayLocked[i] = ro["locked"] | false;
+                copyStr(t.lockReason[i], sizeof(t.lockReason[i]), ro["lock_reason"] | "");
+                copyStr(t.lockLabel[i], sizeof(t.lockLabel[i]), ro["lock_label"] | "");
+            } else {
+                t.relayOn[i] = (v.as<int>() != 0);
             }
         }
         if (t.mac[0] == '\0') {
@@ -116,3 +141,19 @@ size_t SlaveInventory::firstEspNowIndex() {
 }
 
 unsigned long SlaveInventory::lastUpdateMs() { return lastMs_; }
+
+bool SlaveInventory::isRelayLocked(const char *mac, uint8_t relay) {
+    const Target *t = findByMac(mac);
+    if (!t || relay >= kMaxRelays || relay >= t->numRelays) {
+        return false;
+    }
+    return t->relayLocked[relay];
+}
+
+const char *SlaveInventory::relayLockLabel(const char *mac, uint8_t relay) {
+    const Target *t = findByMac(mac);
+    if (!t || relay >= kMaxRelays) {
+        return "";
+    }
+    return t->lockLabel[relay];
+}

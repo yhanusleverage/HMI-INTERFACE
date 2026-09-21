@@ -133,9 +133,9 @@ Accionamiento por relé (ON/OFF · Ciclo · Timer). `duration` en s; `0` = ON fo
 
 `relay` 0..7. Bombas Master (UI **bomba1–6**; wire `dose` channel `R1`–`R6` / `nutrient_proportions`). Detalle: [`HMI_RULES.md`](HMI_RULES.md).
 
-### sys_info — identidad cloud del Master (solo lectura)
+### sys_info — identidad + snapshot de provisión
 
-El **registro Supabase es del Master** ([`CLOUD_REGISTER.md`](CLOUD_REGISTER.md)). El HMI solo muestra `device_id` / `cloud_ok` en System.
+El **registro Supabase es del Master** ([`CLOUD_REGISTER.md`](CLOUD_REGISTER.md)). El HMI muestra `device_id` / `cloud_ok` en System y **precarga** wizard WiFi/perfil si el Master ya fue configurado (SoftAP u otro HMI).
 
 HMI → Master:
 
@@ -143,13 +143,45 @@ HMI → Master:
 {"t":"cmd","action":"sys_info_req"}
 ```
 
-Master → HMI (cuando el bridge UART lo implemente):
+Master → HMI:
 
 ```json
-{"t":"sys_info","device_id":"ESP32_HIDRO_XXXXXX","cloud_ok":true,"process_bridge":true}
+{"t":"sys_info","device_id":"ESP32_HIDRO_XXXXXX","cloud_ok":true,"process_bridge":true,
+ "has_wifi":true,"wifi_connected":true,"ssid":"YAGO_2.4","password":"***",
+ "email":"user@x.com","device_name":"Estufa 1","location":"Estufa"}
 ```
 
+- Sin WiFi en NVS: `has_wifi=false` y no van `ssid`/`password`.
+- HMI: `MasterWifiDraft::applyFromMaster` solo rellena campos vacíos; si HMI aún no tiene STA, guarda `WifiConfig` + conecta (NTP).
+- Password viaja por UART (cable local); el log USB del Master lo redacta como `***`.
+
 `cloud_ok` = Master con WiFi + última telemetría/registro cloud OK. Sin respuesta, System muestra `Master: --`.
+
+### wifi_config — HMI → Master (mismo NVS SoftAP)
+
+```json
+{"t":"cmd","action":"wifi_config","ssid":"…","password":"…","device_name":"…","email":"…","location":"…"}
+```
+
+Master guarda `hydro_system` (+ mirror `wifi_creds`), responde:
+
+```json
+{"t":"wifi_config_ack","ok":true,"device_id":"ESP32_HIDRO_XXXXXX","will_restart":true}
+```
+
+Luego **reinicia ~2.5 s** (paridad SoftAP): sale de WiFi Config Mode y conecta STA con las credenciales nuevas. Válido tras factory reset (wizard) o cambio de red/clave en Ajuste → WiFi.
+
+### master_reboot / factory_reset — Ajustes HMI
+
+```json
+{"t":"cmd","action":"master_reboot"}
+{"t":"cmd","action":"factory_reset"}
+```
+
+| Acción UI | UART | Efecto |
+|-----------|------|--------|
+| **Reiniciar** (System) | `master_reboot` | Master reinicia; HMI también reinicia para re-sync. NVS intacto. |
+| **Reset de fábrica** | `factory_reset` | Master limpia WiFi/perfil (`hydro_system`); HMI borra su NVS y vuelve al wizard. **No** erase flash. |
 
 ### cmd_ack — confirmación de proceso
 
@@ -160,8 +192,6 @@ Tras `dose` / `loop_control` / `nutrient_proportions` / `relay_*` / `setpoint` /
 ```
 
 HMI: System muestra **Proceso UART: OK** cuando llega `cmd_ack` ok o `process_bridge` en sys_info. Password WiFi no se imprime en Serial (`***`).
-
-SoftAP Master (vía A): SSID `ESP32_Hidropônico`, clave **`hidrosetup`**.
 
 ## Diagnóstico Serial
 

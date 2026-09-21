@@ -1,6 +1,7 @@
 #include "NavShell.h"
 #include "Screens.h"
 #include "AppLocale.h"
+#include "MasterLink.h"
 #include "MasterWifiDraft.h"
 #include "NutrientConfig.h"
 #include "RelayAliasConfig.h"
@@ -439,6 +440,13 @@ void NavShell::goToAtlasRelay(uint8_t relayIndex0to7) {
     navigate(ScreenId::RelayActions, curParam, curDose, false);
 }
 
+void NavShell::goToMasterLocalRelay(uint8_t relayIndex0to7) {
+    strncpy(curAtlasMac_, "local", sizeof(curAtlasMac_) - 1);
+    curAtlasMac_[sizeof(curAtlasMac_) - 1] = '\0';
+    curAtlasRelay_ = (relayIndex0to7 < SlaveInventory::kMaxRelays) ? relayIndex0to7 : 0;
+    navigate(ScreenId::RelayActions, curParam, curDose, false);
+}
+
 void NavShell::goToAtlasScreen(ScreenId id) {
     if (curAtlasMac_[0] == '\0') {
         resolveAtlasMac(curAtlasMac_, sizeof(curAtlasMac_));
@@ -493,8 +501,10 @@ void NavShell::wizardContinue() {
     } else if (cur == ScreenId::Language) {
         showScreen(ScreenId::Reservoir, curParam, curDose, false, false);
     } else if (cur == ScreenId::Reservoir) {
+        MasterLink::requestSysInfo();
         showScreen(ScreenId::TimeZone, curParam, curDose, false, false);
     } else if (cur == ScreenId::TimeZone) {
+        MasterLink::requestSysInfo();
         showScreen(ScreenId::MasterWifi, curParam, curDose, false, false);
     } else if (cur == ScreenId::MasterWifi) {
         showScreen(ScreenId::MasterWifiProfile, curParam, curDose, false, false);

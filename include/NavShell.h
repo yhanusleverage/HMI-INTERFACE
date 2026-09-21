@@ -68,6 +68,8 @@ void completePhRelayPick(bool isUp);
 void goToDoseScreen(ScreenId id, DoseChannel channel);
 /** Atlas: lista → hub del relé 0..7 (resuelve MAC ESP-NOW o placeholder). */
 void goToAtlasRelay(uint8_t relayIndex0to7);
+/** Master local: mismo hub de acciones con mac="local" → relay_local. */
+void goToMasterLocalRelay(uint8_t relayIndex0to7);
 /** Pantalla Atlas reutilizando mac+relé actuales. */
 void goToAtlasScreen(ScreenId id);
 void back();

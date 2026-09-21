@@ -476,4 +476,24 @@ void refresh(lv_obj_t *root) {
     rebuildList(nets, n);
 }
 
+void applyPrefill(const char *ssid, const char *pass) {
+    if (!rootScr || !ssid || !ssid[0]) {
+        return;
+    }
+    if (selectedSsid[0] != '\0') {
+        return;
+    }
+    strncpy(selectedSsid, ssid, sizeof(selectedSsid) - 1);
+    selectedSsid[sizeof(selectedSsid) - 1] = '\0';
+    updateSelLabel();
+    if (passTa) {
+        if (pass) {
+            lv_textarea_set_text(passTa, pass);
+        }
+        lv_obj_clear_state(passTa, LV_STATE_DISABLED);
+    }
+    showPickedMode();
+    setStatus(Strings::tr(Msg::WifiWritePass), true);
+}
+
 }  // namespace WifiIntroLayout

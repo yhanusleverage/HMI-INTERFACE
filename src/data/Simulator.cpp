@@ -7,7 +7,12 @@ static unsigned long lastTickMs = 0;
 
 void Simulator::begin() {
     lastTickMs = 0;
-    DataStore::instance().setTelemetry(5.8f, 470.0f, 20.0f, 362.0f, 9.1f, DataSource::Sim);
+#if DATA_SOURCE_SIM
+    DataStore::instance().setTelemetry(5.8f, 470.0f, 20.0f, 362.0f, 9.1f, DataSource::Sim, true, true,
+                                       true);
+#else
+    Serial.println("[SIM] DATA_SOURCE_SIM=0 — esperando telemetria LIVE del Master");
+#endif
 }
 
 void Simulator::tick() {
@@ -34,5 +39,5 @@ void Simulator::tick() {
     const float orpVal = orp.setpoint + 25.0f * sinf(t * 0.11f + 0.7f);
     const float doVal = dox.setpoint + 0.6f * sinf(t * 0.15f + 1.2f);
 
-    store.setTelemetry(phVal, ecVal, tempVal, orpVal, doVal, DataSource::Sim);
+    store.setTelemetry(phVal, ecVal, tempVal, orpVal, doVal, DataSource::Sim, true, true, true);
 }

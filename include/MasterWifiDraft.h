@@ -23,6 +23,13 @@ const char *email();
 const char *deviceName();
 const char *location();
 
+/**
+ * Precarga desde Master sys_info (solo rellena campos vacíos del draft).
+ * Si hay SSID+pass y HMI aún sin WifiConfig, guarda y conecta STA HMI (NTP).
+ */
+void applyFromMaster(const char *ssid, const char *pass, const char *email,
+                     const char *deviceName, const char *location);
+
 /** WifiConfig::save + MasterLink::sendWifiConfig. false si no hay red o falla NVS. */
 bool commitProvision();
 

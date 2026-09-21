@@ -35,6 +35,7 @@ void settingsOnBack() { NavShell::back(); }
 }  // namespace
 
 lv_obj_t *Screens::createMasterWifi(lv_obj_t *parent) {
+    MasterLink::requestSysInfo();
     WifiIntroConfig cfg = {};
     if (NavShell::inWizard()) {
         cfg.stepNum = NavShell::wizardSetupStep();
@@ -53,11 +54,18 @@ lv_obj_t *Screens::createMasterWifi(lv_obj_t *parent) {
         cfg.callbacks.onContinue = settingsOnContinue;
         cfg.callbacks.onSkip = settingsOnBack;
         cfg.callbacks.onBack = settingsOnBack;
+        if (MasterWifiDraft::hasNetwork()) {
+            cfg.initialSsid = MasterWifiDraft::ssid();
+            cfg.initialPass = MasterWifiDraft::pass();
+        }
     }
     return WifiIntroLayout::create(parent, cfg);
 }
 
 void Screens::refreshMasterWifi(lv_obj_t *root) {
+    if (MasterWifiDraft::hasNetwork()) {
+        WifiIntroLayout::applyPrefill(MasterWifiDraft::ssid(), MasterWifiDraft::pass());
+    }
     WifiIntroLayout::refresh(root);
     if (NavShell::inWizard()) {
         return;

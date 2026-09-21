@@ -1,5 +1,6 @@
 #include "Screens.h"
 #include "NavShell.h"
+#include "MasterLink.h"
 #include "MasterWifiDraft.h"
 #include "AppStrings.h"
 #include "theme/AppTheme.h"
@@ -119,6 +120,7 @@ lv_obj_t *makeFieldRow(lv_obj_t *parent, lv_coord_t *y, const char *label, size_
 }  // namespace
 
 lv_obj_t *Screens::createMasterWifiProfile(lv_obj_t *parent) {
+    MasterLink::requestSysInfo();
     root_ = nullptr;
     scroll_ = nullptr;
     networkBanner_ = nullptr;
@@ -198,4 +200,16 @@ lv_obj_t *Screens::createMasterWifiProfile(lv_obj_t *parent) {
 void Screens::refreshMasterWifiProfile(lv_obj_t *root) {
     (void)root;
     paintNetworkBanner();
+    if (emailTa_ && MasterWifiDraft::email()[0] &&
+        (!lv_textarea_get_text(emailTa_) || !lv_textarea_get_text(emailTa_)[0])) {
+        lv_textarea_set_text(emailTa_, MasterWifiDraft::email());
+    }
+    if (nameTa_ && MasterWifiDraft::deviceName()[0] &&
+        (!lv_textarea_get_text(nameTa_) || !lv_textarea_get_text(nameTa_)[0])) {
+        lv_textarea_set_text(nameTa_, MasterWifiDraft::deviceName());
+    }
+    if (locTa_ && MasterWifiDraft::location()[0] &&
+        (!lv_textarea_get_text(locTa_) || !lv_textarea_get_text(locTa_)[0])) {
+        lv_textarea_set_text(locTa_, MasterWifiDraft::location());
+    }
 }

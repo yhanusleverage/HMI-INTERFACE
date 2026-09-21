@@ -33,6 +33,9 @@ struct TelemetrySnapshot {
     unsigned long updatedMs;
     DataSource source;
     bool linkOk;
+    bool phValid;
+    bool ecValid;
+    bool tempValid;
 };
 
 class DataStore {
@@ -44,7 +47,12 @@ public:
     void savePrefs();
 
     TelemetrySnapshot snapshot() const;
-    void setTelemetry(float ph, float ec, float tempAgua, float orp, float doMgL, DataSource source);
+    /**
+     * Actualiza telemetría. Pasar NAN + valid=false limpia el canal (UI "--").
+     * ORP/DO: si NAN se conserva el valor anterior (Master prod no los emite).
+     */
+    void setTelemetry(float ph, float ec, float tempAgua, float orp, float doMgL, DataSource source,
+                      bool phValid, bool ecValid, bool tempValid);
     void setLinkOk(bool ok);
 
     ParamConfig config(ParamId id) const;

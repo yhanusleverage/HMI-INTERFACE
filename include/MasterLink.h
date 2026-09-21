@@ -11,6 +11,8 @@ void sendCalib(const char *paramKey, float point);
 void sendDose(const char *channel, float ml);
 void sendDoseStop(const char *channel);
 void sendDoseHold(const char *channel, bool on);
+/** Calibración caudal bomba → Master (NVS + Supabase). flowMlPerMin en UI. */
+void sendPumpFlowCalib(const char *channel, float flowMlPerMin, float measuredMl, float durationSec);
 /** Receta proporcional → master (HIDROWAVE updateNutrientProportions). */
 void sendNutrientProportions();
 /** Params malha fechada (volumen, pulsos, auto EC/pH). */
@@ -25,6 +27,10 @@ void sendWifiConfig(const char *ssid, const char *password, const char *deviceNa
 /** Último wifi_config_ack: 0=ninguno 1=ok 2=fail. */
 uint8_t wifiConfigAckState();
 void clearWifiConfigAck();
+/** Reinicia el Master (UART). No borra NVS. */
+void sendMasterReboot();
+/** Soft factory Master: limpia hydro_system WiFi/perfil y reinicia Master. */
+void sendFactoryReset();
 /** Relé PCF del master (0..7). state: "on"/"off". duration segundos (0=forever). */
 void sendRelayLocal(uint8_t relay, const char *state, int durationSec);
 /** Relé en slave ESP-NOW. mac "AA:BB:...". */

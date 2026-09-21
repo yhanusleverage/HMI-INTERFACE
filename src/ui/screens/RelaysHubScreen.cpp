@@ -28,10 +28,18 @@ void onPick(lv_event_t *e) {
     NavShell::goToAtlasRelay(r);
 }
 
+void onPickMaster(lv_event_t *e) {
+    const uint8_t r =
+        static_cast<uint8_t>(reinterpret_cast<uintptr_t>(lv_event_get_user_data(e)));
+    NavShell::goToMasterLocalRelay(r);
+}
+
 lv_obj_t *relayTitleLbls_[SlaveInventory::kMaxRelays] = {};
 lv_obj_t *relayHintLbls_[SlaveInventory::kMaxRelays] = {};
+lv_obj_t *masterTitleLbls_[SlaveInventory::kMaxRelays] = {};
 lv_obj_t *veil_ = nullptr;
 lv_obj_t *veilHint_ = nullptr;
+lv_obj_t *masterSection_ = nullptr;
 
 void resolveAtlasMac(char *buf, size_t n) {
     if (!buf || n == 0) {
@@ -68,13 +76,8 @@ bool atlasHubBlocked() {
 }
 
 void applyAtlasVeil() {
-    if (!veil_) {
-        return;
-    }
-    if (atlasHubBlocked()) {
-        lv_obj_clear_flag(veil_, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_move_foreground(veil_);
-    } else {
+    /* Master local debe quedar usable; no velo a pantalla completa. */
+    if (veil_) {
         lv_obj_add_flag(veil_, LV_OBJ_FLAG_HIDDEN);
     }
 }
@@ -90,11 +93,29 @@ void syncRelaysHubRows() {
         snprintf(tag, sizeof(tag), Strings::tr(Msg::AtlasRelayFmt), static_cast<int>(r + 1));
         const char *alias = RelayAliasConfig::getName(mac, r);
         const char *title = (alias && alias[0]) ? alias : tag;
-        const char *rowHint = (alias && alias[0]) ? tag : "";
+        char hintBuf[48];
+        hintBuf[0] = '\0';
+        if (SlaveInventory::isRelayLocked(mac, r)) {
+            const char *lab = SlaveInventory::relayLockLabel(mac, r);
+            if (lab && lab[0]) {
+                snprintf(hintBuf, sizeof(hintBuf), "%s", lab);
+            } else {
+                snprintf(hintBuf, sizeof(hintBuf), "%s", Strings::tr(Msg::RelaysLockByRule));
+            }
+        } else if (alias && alias[0]) {
+            snprintf(hintBuf, sizeof(hintBuf), "%s", tag);
+        }
         lv_label_set_text(relayTitleLbls_[r], title);
         if (relayHintLbls_[r]) {
-            lv_label_set_text(relayHintLbls_[r], rowHint);
+            lv_label_set_text(relayHintLbls_[r], hintBuf);
         }
+    }
+    for (uint8_t r = 0; r < SlaveInventory::kMaxRelays; ++r) {
+        if (!masterTitleLbls_[r]) {
+            continue;
+        }
+        snprintf(tag, sizeof(tag), "R%d", static_cast<int>(r + 1));
+        lv_label_set_text(masterTitleLbls_[r], tag);
     }
 }
 
@@ -104,9 +125,11 @@ lv_obj_t *Screens::createRelaysHub(lv_obj_t *parent) {
     for (uint8_t r = 0; r < SlaveInventory::kMaxRelays; ++r) {
         relayTitleLbls_[r] = nullptr;
         relayHintLbls_[r] = nullptr;
+        masterTitleLbls_[r] = nullptr;
     }
     veil_ = nullptr;
     veilHint_ = nullptr;
+    masterSection_ = nullptr;
 
     lv_obj_t *root = lv_obj_create(parent);
     UiKit::styleScreen(root);
@@ -142,7 +165,34 @@ lv_obj_t *Screens::createRelaysHub(lv_obj_t *parent) {
 
     lv_coord_t y = 0;
     const lv_coord_t step = AppTheme::HUB_ROW_H + 4;
+
+    /* Master local — mismo camino UART que dose (relay_local). */
+    lv_obj_t *masterHdr = lv_label_create(list);
+    lv_label_set_text(masterHdr, Strings::tr(Msg::MasterLocalRelays));
+    lv_obj_set_style_text_color(masterHdr, AppTheme::muted(), 0);
+    lv_obj_set_style_text_font(masterHdr, &lv_font_montserrat_14, 0);
+    lv_obj_set_pos(masterHdr, 12, y);
+    y += 22;
+    masterSection_ = masterHdr;
+
     char tag[24];
+    for (uint8_t r = 0; r < SlaveInventory::kMaxRelays; ++r) {
+        snprintf(tag, sizeof(tag), "R%d", static_cast<int>(r + 1));
+        lv_obj_t *row = UiKit::makeHubMenuRow(
+            list, tag, "", onPickMaster, reinterpret_cast<void *>(static_cast<uintptr_t>(r)));
+        lv_obj_set_pos(row, 12, y);
+        masterTitleLbls_[r] = lv_obj_get_child(row, 0);
+        y += step;
+    }
+
+    y += 8;
+    lv_obj_t *atlasHdr = lv_label_create(list);
+    lv_label_set_text(atlasHdr, Strings::tr(Msg::RelaysTitle));
+    lv_obj_set_style_text_color(atlasHdr, AppTheme::muted(), 0);
+    lv_obj_set_style_text_font(atlasHdr, &lv_font_montserrat_14, 0);
+    lv_obj_set_pos(atlasHdr, 12, y);
+    y += 22;
+
     for (uint8_t r = 0; r < SlaveInventory::kMaxRelays; ++r) {
         snprintf(tag, sizeof(tag), Strings::tr(Msg::AtlasRelayFmt), static_cast<int>(r + 1));
         const char *alias = RelayAliasConfig::getName(mac, r);
@@ -156,7 +206,7 @@ lv_obj_t *Screens::createRelaysHub(lv_obj_t *parent) {
         y += step;
     }
 
-    /* Velo sobre hint+lista; header (Atrás / Actualizar) queda libre. */
+    /* Velo solo sobre sección Atlas (Master local siempre usable). */
     const lv_coord_t veilTop = AppTheme::MENU_LIST_TOP;
     veil_ = lv_obj_create(root);
     lv_obj_remove_style_all(veil_);
