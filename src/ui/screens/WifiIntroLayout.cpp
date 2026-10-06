@@ -154,15 +154,12 @@ void onContinueHdr(lv_event_t *) {
         return;
     }
     const char *pass = passTa ? lv_textarea_get_text(passTa) : "";
+    if (!settingsMode_ && (!pass || pass[0] == '\0')) {
+        setStatus(Strings::tr(Msg::WizardFieldsRequired), false);
+        return;
+    }
     if (cbs.onContinue) {
         cbs.onContinue(selectedSsid, pass ? pass : "");
-    }
-}
-
-void onSkipHdr(lv_event_t *) {
-    hideKb();
-    if (cbs.onSkip) {
-        cbs.onSkip();
     }
 }
 
@@ -352,9 +349,7 @@ lv_obj_t *create(lv_obj_t *parent, const WifiIntroConfig &cfg) {
         lv_obj_t *cont = UiKit::makePrimaryButton(hdr, Strings::tr(Msg::Continue), onContinueHdr);
         lv_obj_set_size(cont, 100, 32);
         lv_obj_align(cont, LV_ALIGN_RIGHT_MID, -kPad, 0);
-        lv_obj_t *sk = UiKit::makeSecondaryButton(hdr, Strings::tr(Msg::Skip), 70, 32, onSkipHdr);
-        lv_obj_align(sk, LV_ALIGN_RIGHT_MID, -108, 0);
-        lv_obj_align(scanBtn, LV_ALIGN_RIGHT_MID, -186, 0);
+        lv_obj_align(scanBtn, LV_ALIGN_RIGHT_MID, -108, 0);
     }
 
     lv_obj_t *statusBar = lv_obj_create(rootScr);

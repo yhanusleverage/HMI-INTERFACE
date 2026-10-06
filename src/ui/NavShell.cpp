@@ -124,7 +124,7 @@ lv_obj_t *build(ScreenId id, ParamId param, DoseChannel dose) {
     case ScreenId::Sensors:
         return Screens::createSensors(contentHost);
     case ScreenId::Rules:
-        return Screens::createControle(contentHost); /* legacy id → Controle */
+        return Screens::createRulesHub(contentHost);
     case ScreenId::Controle:
         return Screens::createControle(contentHost);
     case ScreenId::ControleAuto:
@@ -251,6 +251,8 @@ void refreshActive() {
         Screens::refreshSensors(active);
         break;
     case ScreenId::Rules:
+        Screens::refreshRulesHub(active);
+        break;
     case ScreenId::Controle:
         Screens::refreshControle(active);
         break;
@@ -434,6 +436,31 @@ void NavShell::goToDoseScreen(ScreenId id, DoseChannel channel) {
     navigate(id, curParam, channel, false);
 }
 
+void NavShell::preferOnlineAtlas() {
+    if (strcmp(curAtlasMac_, "local") == 0) {
+        return;
+    }
+    const size_t n = SlaveInventory::count();
+    for (size_t i = 0; i < n; ++i) {
+        const SlaveInventory::Target *t = SlaveInventory::at(i);
+        if (!t || !SlaveInventory::isEspNow(t) || strcmp(t->mac, curAtlasMac_) != 0) {
+            continue;
+        }
+        if (t->online) {
+            return;
+        }
+        break;
+    }
+    char next[SlaveInventory::kMacLen];
+    resolveAtlasMac(next, sizeof(next));
+    if (next[0] == '\0' || strcmp(next, curAtlasMac_) == 0) {
+        return;
+    }
+    Serial.printf("[UART] hub rebind %s -> %s\n", curAtlasMac_[0] ? curAtlasMac_ : "(vacio)", next);
+    strncpy(curAtlasMac_, next, sizeof(curAtlasMac_) - 1);
+    curAtlasMac_[sizeof(curAtlasMac_) - 1] = '\0';
+}
+
 void NavShell::goToAtlasRelay(uint8_t relayIndex0to7) {
     resolveAtlasMac(curAtlasMac_, sizeof(curAtlasMac_));
     curAtlasRelay_ = (relayIndex0to7 < SlaveInventory::kMaxRelays) ? relayIndex0to7 : 0;
@@ -448,6 +475,9 @@ void NavShell::goToMasterLocalRelay(uint8_t relayIndex0to7) {
 }
 
 void NavShell::goToAtlasScreen(ScreenId id) {
+    if (strcmp(curAtlasMac_, "local") != 0) {
+        preferOnlineAtlas();
+    }
     if (curAtlasMac_[0] == '\0') {
         resolveAtlasMac(curAtlasMac_, sizeof(curAtlasMac_));
     }

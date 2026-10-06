@@ -18,7 +18,6 @@ namespace {
 DoseChannel ch_ = DoseChannel::R1;
 lv_obj_t *statusLbl = nullptr;
 bool holding_ = false;
-unsigned long holdStartMs_ = 0;
 
 void setStatus(UiKit::PumpUiStatus st, const char *msg) {
     UiKit::setPumpStatus(statusLbl, st, msg);
@@ -26,14 +25,8 @@ void setStatus(UiKit::PumpUiStatus st, const char *msg) {
 
 void stopHold() {
     if (holding_) {
-        const unsigned long elapsed = millis() - holdStartMs_;
         holding_ = false;
         MasterLink::sendDoseHold(doseChannelKey(ch_), false);
-        const float min = elapsed / 60000.0f;
-        const float ml = PumpConfig::flowMlPerMin(ch_) * min;
-        if (ml > 0.05f) {
-            PumpConfig::addDispensed(ch_, ml);
-        }
     }
 }
 
@@ -52,7 +45,6 @@ void onHold(lv_event_t *e) {
             return;
         }
         holding_ = true;
-        holdStartMs_ = millis();
         MasterLink::sendDoseHold(doseChannelKey(ch_), true);
         setStatus(UiKit::PumpUiStatus::Active, Strings::tr(Msg::HoldOn));
     } else if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {

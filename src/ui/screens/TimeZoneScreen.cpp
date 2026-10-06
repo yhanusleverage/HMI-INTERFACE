@@ -58,8 +58,6 @@ void onSave(lv_event_t *) {
     goNextOrBack();
 }
 
-void onSkip(lv_event_t *) { goNextOrBack(); }
-
 }  // namespace
 
 lv_obj_t *Screens::createTimeZone(lv_obj_t *parent) {
@@ -118,10 +116,6 @@ lv_obj_t *Screens::createTimeZone(lv_obj_t *parent) {
     lv_obj_align(save, LV_ALIGN_BOTTOM_LEFT, AppTheme::PAD, -6);
 
     if (NavShell::inWizard()) {
-        lv_obj_t *sk = UiKit::makeSecondaryButton(root, Strings::tr(Msg::Skip), 100,
-                                                  AppTheme::BTN_PRIMARY_H, onSkip);
-        lv_obj_align(sk, LV_ALIGN_BOTTOM_RIGHT, -AppTheme::PAD, -6);
-
         lv_obj_t *step = lv_label_create(root);
         char sbuf[24];
         snprintf(sbuf, sizeof(sbuf), Strings::tr(Msg::WizardStep), NavShell::wizardSetupStep(),

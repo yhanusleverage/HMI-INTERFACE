@@ -12,7 +12,7 @@ Bienvenida → Idioma → Reservorio → Zona horaria → WiFi (4/5) → Perfil 
 
 En wizard: **Continuar** / **Saltar** (o **OK** del teclado = Continuar). Ver [`ONBOARDING.md`](ONBOARDING.md) y [`CLOUD_REGISTER.md`](CLOUD_REGISTER.md).
 
-Confirmar red (Continuar u OK del teclado) en 4/5 o Ajuste aplica `WifiConfig::save` / UART y `WiFi.begin`; 5/5 solo añade perfil cloud.
+Confirmar red en **Ajuste** aplica `WifiConfig::save` / UART de inmediato. En **wizard**: 4/5 solo draft; 5/5 Continuar/Skip hace un `commitProvision` (red + perfil cloud) → UART + STA Master.
 
 ## UX (landscape 480×320)
 

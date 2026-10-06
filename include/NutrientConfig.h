@@ -20,6 +20,10 @@ void begin();
 void load();
 void save();
 
+/** Sustituye la receta (ml/L por relé) y guarda NVS. No manda UART. */
+void replaceQuantities(const char *const *names, const float *mlPerL, const uint8_t *relays,
+                       size_t n);
+
 float ecLow();
 float ecHigh();
 float phLow();

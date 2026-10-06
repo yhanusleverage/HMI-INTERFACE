@@ -39,7 +39,7 @@ flowchart TB
 
 ### Con display (vía B)
 
-1. **Wizard** (pasos 4/5–5/5) o Setup → **WiFi**: red en 4/5, perfil en 5/5 → UART `wifi_config` + NVS HMI (NTP). SoftAP = vía A / fallback.
+1. **Wizard** (pasos 4/5–5/5) o Setup → **WiFi**: red en draft 4/5; **un** `wifi_config` al cerrar 5/5 (red + perfil) + NVS HMI (NTP). SoftAP = vía A / fallback.
 2. Master guarda el mismo NVS que SoftAP y conecta STA.
 3. Claim web con Device ID (SoftAP, System HMI vía `sys_info`, o página SoftAP).
 4. SoftAP sigue disponible si no hay HMI o UART caído.
@@ -60,7 +60,7 @@ Email SoftAP = **opcional / legado**. Ownership = `owner_id` vía `claim_device`
 
 ## HMI
 
-- Ajuste → **WiFi** = mismo layout que wizard 4/5 (solo red; UART + NTP). Perfil cloud = wizard 5/5.
+- Ajuste → **WiFi** = mismo layout que wizard 4/5 (solo red; UART + NTP inmediato). Perfil cloud = wizard 5/5 (UART conjunto al cerrar).
 - System: `device_id` / `cloud_ok` solo lectura (`sys_info`).
 - No bloquear Central si no hay cloud.
 

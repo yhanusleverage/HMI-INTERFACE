@@ -12,8 +12,8 @@
 #include <cstring>
 
 /**
- * Atlas L2: lista relé1…8 (alias si hay) + Actualizar → RelayActions.
- * Cortina si placeholder / offline; Atrás y Actualizar fuera del velo.
+ * Relés L2: Atlas (ESP-NOW) primero → RelayActions; bombas Master abajo (relay_local).
+ * Actualizar → slaves_req. Cortina Atlas si offline (velo hoy no bloquea Master).
  */
 
 namespace {
@@ -165,27 +165,9 @@ lv_obj_t *Screens::createRelaysHub(lv_obj_t *parent) {
 
     lv_coord_t y = 0;
     const lv_coord_t step = AppTheme::HUB_ROW_H + 4;
-
-    /* Master local — mismo camino UART que dose (relay_local). */
-    lv_obj_t *masterHdr = lv_label_create(list);
-    lv_label_set_text(masterHdr, Strings::tr(Msg::MasterLocalRelays));
-    lv_obj_set_style_text_color(masterHdr, AppTheme::muted(), 0);
-    lv_obj_set_style_text_font(masterHdr, &lv_font_montserrat_14, 0);
-    lv_obj_set_pos(masterHdr, 12, y);
-    y += 22;
-    masterSection_ = masterHdr;
-
     char tag[24];
-    for (uint8_t r = 0; r < SlaveInventory::kMaxRelays; ++r) {
-        snprintf(tag, sizeof(tag), "R%d", static_cast<int>(r + 1));
-        lv_obj_t *row = UiKit::makeHubMenuRow(
-            list, tag, "", onPickMaster, reinterpret_cast<void *>(static_cast<uintptr_t>(r)));
-        lv_obj_set_pos(row, 12, y);
-        masterTitleLbls_[r] = lv_obj_get_child(row, 0);
-        y += step;
-    }
 
-    y += 8;
+    /* Atlas primero (ESP-NOW) — relay_slave. Bombas Master abajo — relay_local. */
     lv_obj_t *atlasHdr = lv_label_create(list);
     lv_label_set_text(atlasHdr, Strings::tr(Msg::RelaysTitle));
     lv_obj_set_style_text_color(atlasHdr, AppTheme::muted(), 0);
@@ -203,6 +185,24 @@ lv_obj_t *Screens::createRelaysHub(lv_obj_t *parent) {
         lv_obj_set_pos(row, 12, y);
         relayTitleLbls_[r] = lv_obj_get_child(row, 0);
         relayHintLbls_[r] = lv_obj_get_child(row, 1);
+        y += step;
+    }
+
+    y += 8;
+    lv_obj_t *masterHdr = lv_label_create(list);
+    lv_label_set_text(masterHdr, Strings::tr(Msg::MasterLocalRelays));
+    lv_obj_set_style_text_color(masterHdr, AppTheme::muted(), 0);
+    lv_obj_set_style_text_font(masterHdr, &lv_font_montserrat_14, 0);
+    lv_obj_set_pos(masterHdr, 12, y);
+    y += 22;
+    masterSection_ = masterHdr;
+
+    for (uint8_t r = 0; r < SlaveInventory::kMaxRelays; ++r) {
+        snprintf(tag, sizeof(tag), "R%d", static_cast<int>(r + 1));
+        lv_obj_t *row = UiKit::makeHubMenuRow(
+            list, tag, "", onPickMaster, reinterpret_cast<void *>(static_cast<uintptr_t>(r)));
+        lv_obj_set_pos(row, 12, y);
+        masterTitleLbls_[r] = lv_obj_get_child(row, 0);
         y += step;
     }
 

@@ -27,8 +27,10 @@ constexpr lv_coord_t kRowH = kBtnH;
 
 lv_obj_t *listHost_ = nullptr;
 lv_obj_t *lockLbl_ = nullptr;
-lv_obj_t *onValLbl_ = nullptr;
-lv_obj_t *offValLbl_ = nullptr;
+lv_obj_t *onHBtn_ = nullptr;
+lv_obj_t *onMBtn_ = nullptr;
+lv_obj_t *offHBtn_ = nullptr;
+lv_obj_t *offMBtn_ = nullptr;
 lv_obj_t *enOnBtn_ = nullptr;
 lv_obj_t *enOffBtn_ = nullptr;
 lv_obj_t *saveBtn_ = nullptr;
@@ -39,11 +41,19 @@ char slotMac_[SlaveInventory::kMacLen] = {};
 uint8_t slotRelay_ = 0;
 bool draftEn_ = false;
 uint8_t draftOnH_ = 12;
+uint8_t draftOnM_ = 0;
 uint8_t draftOffH_ = 12;
+uint8_t draftOffM_ = 0;
+bool onEditMin_ = false;
+bool offEditMin_ = false;
 bool built_ = false;
 
 void onEnOn(lv_event_t *);
 void onEnOff(lv_event_t *);
+void onOnH(lv_event_t *);
+void onOnM(lv_event_t *);
+void onOffH(lv_event_t *);
+void onOffM(lv_event_t *);
 void onOnMinus(lv_event_t *);
 void onOnPlus(lv_event_t *);
 void onOffMinus(lv_event_t *);
@@ -77,14 +87,18 @@ void syncSlotFromNav() {
 void loadDraft() {
     draftEn_ = false;
     draftOnH_ = 12;
+    draftOnM_ = 0;
     draftOffH_ = 12;
+    draftOffM_ = 0;
     const RelayCycleConfig::Entry *e = RelayCycleConfig::get(slotMac_, slotRelay_);
     if (!e) {
         return;
     }
     draftEn_ = e->enabled;
     draftOnH_ = e->onHours;
+    draftOnM_ = e->onMin;
     draftOffH_ = e->offHours;
+    draftOffM_ = e->offMin;
 }
 
 void paintOnOffPair(lv_obj_t *onBtn, lv_obj_t *offBtn, bool on) {
@@ -107,16 +121,25 @@ lv_obj_t *makeSeg(lv_obj_t *parent, const char *txt, lv_event_cb_t cb) {
     return UiKit::makeSecondaryButton(parent, txt, kSegW, kBtnH, cb);
 }
 
+void paintHm(lv_obj_t *btn, unsigned value, bool selected) {
+    if (!btn) {
+        return;
+    }
+    char buf[4];
+    snprintf(buf, sizeof(buf), "%02u", value);
+    lv_obj_t *lbl = lv_obj_get_child(btn, 0);
+    if (lbl) {
+        lv_label_set_text(lbl, buf);
+        lv_obj_set_style_text_color(lbl, selected ? AppTheme::bg() : AppTheme::text(), 0);
+    }
+    lv_obj_set_style_bg_color(btn, selected ? AppTheme::accent() : AppTheme::surfaceAlt(), 0);
+}
+
 void refreshValues() {
-    char buf[12];
-    if (onValLbl_) {
-        snprintf(buf, sizeof(buf), "%u h", static_cast<unsigned>(draftOnH_));
-        lv_label_set_text(onValLbl_, buf);
-    }
-    if (offValLbl_) {
-        snprintf(buf, sizeof(buf), "%u h", static_cast<unsigned>(draftOffH_));
-        lv_label_set_text(offValLbl_, buf);
-    }
+    paintHm(onHBtn_, draftOnH_, !onEditMin_);
+    paintHm(onMBtn_, draftOnM_, onEditMin_);
+    paintHm(offHBtn_, draftOffH_, !offEditMin_);
+    paintHm(offMBtn_, draftOffM_, offEditMin_);
     paintOnOffPair(enOnBtn_, enOffBtn_, draftEn_);
 
     const bool timerLock = RelayActuationLock::timerActive(slotMac_, slotRelay_);
@@ -139,8 +162,8 @@ void refreshValues() {
     }
 }
 
-lv_obj_t *makePmRow(lv_obj_t *parent, lv_coord_t y, const char *title, lv_obj_t **valOut,
-                    lv_event_cb_t onM, lv_event_cb_t onP) {
+lv_obj_t *makeHmRow(lv_obj_t *parent, lv_coord_t y, const char *title, lv_obj_t **hBtn, lv_obj_t **mBtn,
+                    lv_event_cb_t onH, lv_event_cb_t onM, lv_event_cb_t onMinus, lv_event_cb_t onPlus) {
     lv_obj_t *row = lv_obj_create(parent);
     lv_obj_remove_style_all(row);
     lv_obj_set_size(row, kRowW, kRowH);
@@ -156,18 +179,26 @@ lv_obj_t *makePmRow(lv_obj_t *parent, lv_coord_t y, const char *title, lv_obj_t 
     lv_obj_set_style_text_font(t, &lv_font_montserrat_14, 0);
     lv_obj_align(t, LV_ALIGN_LEFT_MID, 8, 0);
 
-    lv_obj_t *v = lv_label_create(row);
-    lv_obj_set_style_text_color(v, AppTheme::text(), 0);
-    lv_obj_set_style_text_font(v, &lv_font_montserrat_20, 0);
-    lv_obj_align(v, LV_ALIGN_CENTER, 0, 0);
-    if (valOut) {
-        *valOut = v;
+    lv_obj_t *hb = UiKit::makeSecondaryButton(row, "00", 56, kBtnH, onH);
+    lv_obj_align(hb, LV_ALIGN_LEFT_MID, 78, 0);
+    lv_obj_t *colon = lv_label_create(row);
+    lv_label_set_text(colon, ":");
+    lv_obj_set_style_text_color(colon, AppTheme::text(), 0);
+    lv_obj_set_style_text_font(colon, &lv_font_montserrat_20, 0);
+    lv_obj_align(colon, LV_ALIGN_LEFT_MID, 138, 0);
+    lv_obj_t *mb = UiKit::makeSecondaryButton(row, "00", 56, kBtnH, onM);
+    lv_obj_align(mb, LV_ALIGN_LEFT_MID, 150, 0);
+    if (hBtn) {
+        *hBtn = hb;
+    }
+    if (mBtn) {
+        *mBtn = mb;
     }
 
-    lv_obj_t *m = UiKit::makeSecondaryButton(row, "-", 52, kBtnH, onM);
-    lv_obj_align(m, LV_ALIGN_RIGHT_MID, -(8 + 52 + 4), 0);
-    lv_obj_t *p = UiKit::makeSecondaryButton(row, "+", 52, kBtnH, onP);
-    lv_obj_align(p, LV_ALIGN_RIGHT_MID, -8, 0);
+    lv_obj_t *minus = UiKit::makeSecondaryButton(row, "-", 52, kBtnH, onMinus);
+    lv_obj_align(minus, LV_ALIGN_RIGHT_MID, -(8 + 52 + 4), 0);
+    lv_obj_t *plus = UiKit::makeSecondaryButton(row, "+", 52, kBtnH, onPlus);
+    lv_obj_align(plus, LV_ALIGN_RIGHT_MID, -8, 0);
     return row;
 }
 
@@ -176,7 +207,8 @@ void buildDetail() {
         return;
     }
     lv_obj_clean(listHost_);
-    lockLbl_ = onValLbl_ = offValLbl_ = enOnBtn_ = enOffBtn_ = saveBtn_ = nullptr;
+    lockLbl_ = enOnBtn_ = enOffBtn_ = saveBtn_ = nullptr;
+    onHBtn_ = onMBtn_ = offHBtn_ = offMBtn_ = nullptr;
     built_ = false;
 
     lv_coord_t y = 2;
@@ -219,9 +251,11 @@ void buildDetail() {
     lv_obj_align(enOffBtn_, LV_ALIGN_RIGHT_MID, -kPad, 0);
     y += kRowH + kGap;
 
-    makePmRow(listHost_, y, Strings::tr(Msg::RelaysOnHours), &onValLbl_, onOnMinus, onOnPlus);
+    makeHmRow(listHost_, y, Strings::tr(Msg::OnLabel), &onHBtn_, &onMBtn_, onOnH, onOnM, onOnMinus,
+              onOnPlus);
     y += kRowH + kGap;
-    makePmRow(listHost_, y, Strings::tr(Msg::RelaysOffHours), &offValLbl_, onOffMinus, onOffPlus);
+    makeHmRow(listHost_, y, Strings::tr(Msg::OffLabel), &offHBtn_, &offMBtn_, onOffH, onOffM, onOffMinus,
+              onOffPlus);
     y += kRowH + 8;
 
     saveBtn_ = UiKit::makePrimaryButton(listHost_, Strings::tr(Msg::NutSave), onSave);
@@ -243,36 +277,70 @@ void onEnOff(lv_event_t *) {
     refreshValues();
 }
 
-void onOnMinus(lv_event_t *) {
-    if (draftOnH_ > 1) {
-        --draftOnH_;
-        refreshValues();
+void stepHm(uint8_t &h, uint8_t &m, bool editMin, int dir) {
+    if (editMin) {
+        int v = static_cast<int>(m) + dir;
+        if (v < 0) {
+            v = 0;
+        }
+        if (v > 59) {
+            v = 59;
+        }
+        m = static_cast<uint8_t>(v);
+    } else {
+        int v = static_cast<int>(h) + dir;
+        if (v < 0) {
+            v = 0;
+        }
+        if (v > 23) {
+            v = 23;
+        }
+        h = static_cast<uint8_t>(v);
     }
+    if (h == 0 && m == 0) {
+        m = 1;
+    }
+}
+
+void onOnH(lv_event_t *) {
+    onEditMin_ = false;
+    refreshValues();
+}
+void onOnM(lv_event_t *) {
+    onEditMin_ = true;
+    refreshValues();
+}
+void onOffH(lv_event_t *) {
+    offEditMin_ = false;
+    refreshValues();
+}
+void onOffM(lv_event_t *) {
+    offEditMin_ = true;
+    refreshValues();
+}
+
+void onOnMinus(lv_event_t *) {
+    stepHm(draftOnH_, draftOnM_, onEditMin_, -1);
+    refreshValues();
 }
 void onOnPlus(lv_event_t *) {
-    if (draftOnH_ < 23) {
-        ++draftOnH_;
-        refreshValues();
-    }
+    stepHm(draftOnH_, draftOnM_, onEditMin_, 1);
+    refreshValues();
 }
 void onOffMinus(lv_event_t *) {
-    if (draftOffH_ > 1) {
-        --draftOffH_;
-        refreshValues();
-    }
+    stepHm(draftOffH_, draftOffM_, offEditMin_, -1);
+    refreshValues();
 }
 void onOffPlus(lv_event_t *) {
-    if (draftOffH_ < 23) {
-        ++draftOffH_;
-        refreshValues();
-    }
+    stepHm(draftOffH_, draftOffM_, offEditMin_, 1);
+    refreshValues();
 }
 
 void onSave(lv_event_t *) {
     if (RelayActuationLock::timerActive(slotMac_, slotRelay_)) {
         return;
     }
-    RelayCycleConfig::setHours(slotMac_, slotRelay_, draftOnH_, draftOffH_);
+    RelayCycleConfig::setHours(slotMac_, slotRelay_, draftOnH_, draftOnM_, draftOffH_, draftOffM_);
     RelayCycleConfig::setEnabled(slotMac_, slotRelay_, draftEn_);
     NavShell::back();
 }

@@ -16,6 +16,10 @@ lv_obj_t *createNiveles(lv_obj_t *parent);
 lv_obj_t *createSettings(lv_obj_t *parent);
 lv_obj_t *createLanguage(lv_obj_t *parent);
 lv_obj_t *createSystem(lv_obj_t *parent);
+/** Copia del panel Sistema al Serial USB HMI (debug). */
+void dumpSystemSerial();
+/** Marca el primer instante en que UART, bridge, WiFi y reloj están listos. */
+void tickBootReady();
 lv_obj_t *createDosingHub(lv_obj_t *parent);
 lv_obj_t *createDosing(lv_obj_t *parent);
 lv_obj_t *createDosingChannel(lv_obj_t *parent, DoseChannel channel);
@@ -35,6 +39,7 @@ lv_obj_t *createDisplayReadings(lv_obj_t *parent);
 lv_obj_t *createSetup(lv_obj_t *parent);
 lv_obj_t *createSensors(lv_obj_t *parent);
 lv_obj_t *createControle(lv_obj_t *parent);
+lv_obj_t *createRulesHub(lv_obj_t *parent);
 lv_obj_t *createControleAuto(lv_obj_t *parent);
 lv_obj_t *createUnits(lv_obj_t *parent);
 lv_obj_t *createReservoir(lv_obj_t *parent);
@@ -80,6 +85,7 @@ void refreshDisplayReadings(lv_obj_t *root);
 void refreshSetup(lv_obj_t *root);
 void refreshSensors(lv_obj_t *root);
 void refreshControle(lv_obj_t *root);
+void refreshRulesHub(lv_obj_t *root);
 void refreshControleAuto(lv_obj_t *root);
 void refreshUnits(lv_obj_t *root);
 void refreshReservoir(lv_obj_t *root);

@@ -9,14 +9,16 @@
 void FactoryReset::wipeAndReboot(bool alsoResetMaster) {
     Serial.println("[FACTORY] wiping NVS user data...");
 
-    if (alsoResetMaster && MasterLink::linkOk()) {
+    if (alsoResetMaster) {
+        /* Siempre intentar UART (linkOk false no debe saltar el Master). */
         MasterLink::sendFactoryReset();
-        /* Dejar salir el UART antes de borrar/reiniciar HMI. */
-        delay(250);
-        MasterLink::loop();
-        delay(100);
-    } else if (alsoResetMaster) {
-        Serial.println("[FACTORY] UART sin enlace — solo reset local HMI");
+        MasterLink::flush();
+        const unsigned long t0 = millis();
+        while ((millis() - t0) < 800UL) {
+            MasterLink::loop();
+            delay(40);
+        }
+        delay(200);
     }
 
     WifiConfig::begin();

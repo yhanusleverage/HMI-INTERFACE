@@ -66,10 +66,20 @@ const char *location() { return loc_; }
 
 void applyFromMaster(const char *ssid, const char *pass, const char *email,
                      const char *deviceName, const char *location) {
-    if (ssid && ssid[0] && !hasNetwork_) {
-        setNetwork(ssid, pass ? pass : "");
-        if (!WifiConfig::configured()) {
-            if (WifiConfig::save(ssid_, pass_)) {
+    if (ssid && ssid[0] && pass && pass[0]) {
+        if (!hasNetwork_) {
+            setNetwork(ssid, pass);
+        }
+        if (!WifiConfig::isConnected()) {
+            char curSsid[WifiConfig::SSID_MAX];
+            char curPass[WifiConfig::PASS_MAX];
+            WifiConfig::getSsid(curSsid, sizeof(curSsid));
+            WifiConfig::getPass(curPass, sizeof(curPass));
+            const bool same = strcmp(curSsid, ssid) == 0 && strcmp(curPass, pass) == 0;
+            const uint8_t st = WifiConfig::linkState();
+            if (!same) {
+                WifiConfig::save(ssid, pass);
+            } else if (st == 0 || st == 3) {
                 WifiConfig::connectSaved();
             }
         }

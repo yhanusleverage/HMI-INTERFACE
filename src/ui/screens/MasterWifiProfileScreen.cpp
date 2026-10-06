@@ -66,9 +66,20 @@ void advanceWizard(bool withProfile) {
     NavShell::wizardContinue();
 }
 
-void onContinue(lv_event_t *) { advanceWizard(true); }
-
-void onSkip(lv_event_t *) { advanceWizard(false); }
+void onContinue(lv_event_t *) {
+    hideKb();
+    const char *email = emailTa_ ? lv_textarea_get_text(emailTa_) : "";
+    const char *name = nameTa_ ? lv_textarea_get_text(nameTa_) : "";
+    const char *loc = locTa_ ? lv_textarea_get_text(locTa_) : "";
+    if (!email || !email[0] || !name || !name[0] || !loc || !loc[0] ||
+        !MasterWifiDraft::hasNetwork()) {
+        if (networkBanner_) {
+            lv_label_set_text(networkBanner_, Strings::tr(Msg::WizardFieldsRequired));
+        }
+        return;
+    }
+    advanceWizard(true);
+}
 
 void paintNetworkBanner() {
     if (!networkBanner_) {
@@ -181,10 +192,6 @@ lv_obj_t *Screens::createMasterWifiProfile(lv_obj_t *parent) {
 
     lv_obj_t *cont = UiKit::makePrimaryButton(root_, Strings::tr(Msg::Continue), onContinue);
     lv_obj_align(cont, LV_ALIGN_BOTTOM_MID, 0, -6);
-
-    lv_obj_t *sk = UiKit::makeSecondaryButton(root_, Strings::tr(Msg::Skip), 100,
-                                              AppTheme::BTN_PRIMARY_H, onSkip);
-    lv_obj_align(sk, LV_ALIGN_BOTTOM_RIGHT, -AppTheme::PAD, -6);
 
     kb_ = lv_keyboard_create(root_);
     UiKit::styleDarkKeyboard(kb_);

@@ -282,6 +282,7 @@ enum class Msg : uint16_t {
     RecipeEcHint,
     RecipeEcMissing,
     RecipeEcFmt,
+    WizardFieldsRequired,
     Count
 };
 

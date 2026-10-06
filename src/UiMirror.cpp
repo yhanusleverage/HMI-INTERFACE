@@ -4,6 +4,7 @@
 #include "DoseChannel.h"
 #include "DisplayHal.h"
 #include "MasterLink.h"
+#include "Screens.h"
 #include "Config.h"
 
 namespace {
@@ -70,6 +71,7 @@ const char *screenName(ScreenId id) {
     case ScreenId::Sensors:
         return "SENSORS";
     case ScreenId::Rules:
+        return "REGLAS";
     case ScreenId::Controle:
         return "CONTROLE";
     case ScreenId::ControleAuto:
@@ -180,6 +182,10 @@ void UiMirror::dump() {
     Serial.println("| En Serial Monitor escribi: view | mirror on | mirror off     |");
     Serial.println("+--------------------------------------------------------------+");
     Serial.println();
+
+    if (scr == ScreenId::System) {
+        Screens::dumpSystemSerial();
+    }
 }
 
 void UiMirror::setAuto(bool on) {

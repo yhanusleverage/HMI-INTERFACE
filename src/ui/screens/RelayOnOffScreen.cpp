@@ -23,6 +23,11 @@ lv_obj_t *statusLbl_ = nullptr;
 lv_obj_t *lockLbl_ = nullptr;
 bool relayOn_ = false;
 bool online_ = false;
+/** El refresco de UI (200 ms) no debe pisar el ON/OFF hasta que un t:slaves posterior coincida. */
+bool pending_ = false;
+bool pendingOn_ = false;
+unsigned long pendingSinceMs_ = 0;
+constexpr unsigned long kHoldUntilInventoryMs = 8000UL;
 
 bool isPlaceholderMac(const char *mac) {
     return mac && strcmp(mac, RelayAliasConfig::kPlaceholderMac) == 0;
@@ -106,11 +111,17 @@ void paintToggle() {
 }
 
 void syncFromInventory() {
+    if (!pending_) {
+        NavShell::preferOnlineAtlas();
+    }
     online_ = false;
-    relayOn_ = false;
     const char *mac = NavShell::currentAtlasMac();
     const uint8_t r = NavShell::currentAtlasRelay();
+    bool found = false;
+    bool invOn = false;
     if (!mac || !mac[0] || isPlaceholderMac(mac)) {
+        pending_ = false;
+        relayOn_ = false;
         return;
     }
     if (strcmp(mac, "local") == 0) {
@@ -118,25 +129,60 @@ void syncFromInventory() {
         const size_t ix = SlaveInventory::localIndex();
         const SlaveInventory::Target *t = (ix != SIZE_MAX) ? SlaveInventory::at(ix) : nullptr;
         if (t && r < SlaveInventory::kMaxRelays) {
-            relayOn_ = t->relayOn[r];
+            found = true;
+            invOn = t->relayOn[r];
+        }
+    } else {
+        const size_t nT = SlaveInventory::count();
+        for (size_t i = 0; i < nT; ++i) {
+            const SlaveInventory::Target *t = SlaveInventory::at(i);
+            if (!SlaveInventory::isEspNow(t) || strcmp(t->mac, mac) != 0) {
+                continue;
+            }
+            online_ = t->online;
+            found = true;
+            if (r < SlaveInventory::kMaxRelays) {
+                invOn = t->relayOn[r];
+            }
+            break;
+        }
+    }
+
+    if (!pending_) {
+        if (found) {
+            relayOn_ = invOn;
         }
         return;
     }
-    const size_t nT = SlaveInventory::count();
-    for (size_t i = 0; i < nT; ++i) {
-        const SlaveInventory::Target *t = SlaveInventory::at(i);
-        if (!SlaveInventory::isEspNow(t) || strcmp(t->mac, mac) != 0) {
-            continue;
-        }
-        online_ = t->online;
-        if (r < SlaveInventory::kMaxRelays) {
-            relayOn_ = t->relayOn[r];
+
+    bool confirmedOn = false;
+    const bool confirmed =
+        SlaveInventory::confirmedBit(mac, r, pendingSinceMs_, &confirmedOn);
+    if (confirmed) {
+        pending_ = false;
+        relayOn_ = confirmedOn;
+        return;
+    }
+    if (millis() - pendingSinceMs_ >= kHoldUntilInventoryMs) {
+        pending_ = false;
+        if (found) {
+            relayOn_ = invOn;
         }
         return;
     }
+    relayOn_ = pendingOn_;
+}
+
+void armPending(bool on) {
+    pending_ = true;
+    pendingOn_ = on;
+    pendingSinceMs_ = millis();
+    relayOn_ = on;
 }
 
 void sendState(bool on) {
+    NavShell::preferOnlineAtlas();
+    syncFromInventory();
     if (!canSend()) {
         paintToggle();
         return;
@@ -151,7 +197,7 @@ void sendState(bool on) {
         return;
     }
     if (strcmp(mac, "local") == 0) {
-        relayOn_ = on;
+        armPending(on);
         paintToggle();
         MasterLink::sendRelayLocal(r, on ? "on" : "off", 0);
         if (statusLbl_) {
@@ -168,7 +214,7 @@ void sendState(bool on) {
         return;
     }
     RelayActuationLock::set(mac, r, RelayActuationLock::Owner::ManualPulse);
-    relayOn_ = on;
+    armPending(on);
     paintToggle();
     MasterLink::sendRelaySlave(mac, r, on ? "on" : "off", 0);
     if (statusLbl_) {
@@ -233,6 +279,7 @@ lv_obj_t *Screens::createRelayOnOff(lv_obj_t *parent) {
     statusLbl_ = lv_label_create(root);
     lv_obj_set_pos(statusLbl_, 12, y);
 
+    pending_ = false;
     syncFromInventory();
     paintToggle();
     if (statusLbl_) {

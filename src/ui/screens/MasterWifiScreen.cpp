@@ -8,13 +8,15 @@
 /**
  * WiFi unificado: wizard 4/5 + Ajuste — mismo WifiIntroLayout (solo red).
  * Perfil cloud (email/nombre/location) → wizard 5/5 MasterWifiProfile.
+ * Wizard: 4/5 solo draft; commitProvision (UART+NVS Master) en 5/5.
+ * Ajuste: commit inmediato (solo red).
  */
 
 namespace {
 
 void wizardOnContinue(const char *ssid, const char *pass) {
+    /* Solo draft: UART wifi_config + reboot Master al cerrar 5/5 (perfil incluido). */
     MasterWifiDraft::setNetwork(ssid, pass ? pass : "");
-    (void)MasterWifiDraft::commitProvision();
     NavShell::wizardContinue();
 }
 

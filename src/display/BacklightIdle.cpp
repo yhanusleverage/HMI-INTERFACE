@@ -163,12 +163,11 @@ void BacklightIdle::tick() {
     const bool alarm = processAlarmActive();
 
     if (alarm) {
-        if (!lit_) {
-            applyHw(true);
-        }
-        /* No resetear activity cada tick — si no, nunca apaga con BAJO/ALTO crónico. */
+        /* Edge alarma ON: despertar una vez. Luego idle largo puede apagar y
+         * quedarse OFF hasta toque (antes: cada tick re-encendía → LOW/HIGH). */
         if (!prevAlarm_) {
             bumpActivity();
+            applyHw(true);
             if (mode_ == Mode::ForcedOff) {
                 mode_ = Mode::AlwaysOn;
                 save();

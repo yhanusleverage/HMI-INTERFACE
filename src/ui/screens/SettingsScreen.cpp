@@ -9,6 +9,7 @@ namespace {
 
 void onBack(lv_event_t *) { NavShell::back(); }
 void onControle(lv_event_t *) { NavShell::goTo(ScreenId::Controle); }
+void onRules(lv_event_t *) { NavShell::goTo(ScreenId::Rules); }
 void onRelays(lv_event_t *) { NavShell::goTo(ScreenId::RelaysHub); }
 void onDosingHub(lv_event_t *) { NavShell::goTo(ScreenId::DosingHub); }
 void onSetup(lv_event_t *) { NavShell::goTo(ScreenId::Setup); }
@@ -39,6 +40,10 @@ lv_obj_t *Screens::createSettings(lv_obj_t *parent) {
 
     lv_obj_t *r0 = UiKit::makeMenuRow(host, Strings::tr(Msg::ControleTitle), onControle, nullptr);
     lv_obj_set_pos(r0, 12, y);
+    y += step;
+
+    lv_obj_t *rRules = UiKit::makeMenuRow(host, "Reglas", onRules, nullptr);
+    lv_obj_set_pos(rRules, 12, y);
     y += step;
 
     lv_obj_t *rRelays = UiKit::makeMenuRow(host, Strings::tr(Msg::RelaysMenu), onRelays, nullptr);

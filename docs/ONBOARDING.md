@@ -18,7 +18,7 @@ Energía
 
 Fuso por **ciudad/región**, no por UTC.
 
-**WiFi wizard 4/5:** SSID + clave. Continuar u OK del teclado aplica `WifiConfig::save` / UART y arranca STA; 5/5 solo añade perfil cloud (reenvío opcional). Skip = SoftAP más tarde en el Master (SSID `ESP32_Hidropônico` / clave `hidrosetup`). Email/nome/location = solo paso 5/5.
+**WiFi wizard 4/5:** SSID + clave en draft HMI (sin UART). **5/5 Continuar/Skip:** un solo `commitProvision` → `wifi_config` UART con red + email/nome/location → Master NVS + reboot. Skip en 4/5 = sin red en draft → 5/5 no manda UART (SoftAP más tarde: SSID `ESP32_Hidropônico` / clave `hidrosetup`). Email/nome/location = solo paso 5/5.
 
 ## Reinicios
 

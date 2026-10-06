@@ -13,7 +13,7 @@
 #include <cstdio>
 #include <cstring>
 
-/** Timer digital Atlas: ON min + OFF min, alterna hasta Stop. */
+/** Timer Atlas: la cuenta atrás es local. El esclavo ejecuta el cycle hasta Stop. */
 
 namespace {
 
@@ -26,8 +26,10 @@ enum class Phase : uint8_t { Idle, On, Off };
 lv_obj_t *listHost_ = nullptr;
 lv_obj_t *lockLbl_ = nullptr;
 lv_obj_t *phaseLbl_ = nullptr;
-lv_obj_t *onValLbl_ = nullptr;
-lv_obj_t *offValLbl_ = nullptr;
+lv_obj_t *onHBtn_ = nullptr;
+lv_obj_t *onMBtn_ = nullptr;
+lv_obj_t *offHBtn_ = nullptr;
+lv_obj_t *offMBtn_ = nullptr;
 lv_obj_t *statusLbl_ = nullptr;
 lv_obj_t *startBtn_ = nullptr;
 lv_obj_t *stopBtn_ = nullptr;
@@ -36,14 +38,22 @@ char slotMac_[SlaveInventory::kMacLen] = {};
 uint8_t slotRelay_ = 0;
 bool slotOnline_ = false;
 
-uint16_t onMin_ = 5;
-uint16_t offMin_ = 5;
+uint8_t onH_ = 0;
+uint8_t onM_ = 5;
+uint8_t offH_ = 0;
+uint8_t offM_ = 5;
+bool onEditMin_ = true;
+bool offEditMin_ = true;
 Phase phase_ = Phase::Idle;
 unsigned long phaseStartMs_ = 0;
 bool built_ = false;
 
 void onStart(lv_event_t *);
 void onStop(lv_event_t *);
+void onOnH(lv_event_t *);
+void onOnM(lv_event_t *);
+void onOffH(lv_event_t *);
+void onOffM(lv_event_t *);
 void onOnMinus(lv_event_t *);
 void onOnPlus(lv_event_t *);
 void onOffMinus(lv_event_t *);
@@ -82,18 +92,21 @@ bool canSend() {
            strcmp(slotMac_, "local") != 0;
 }
 
-void sendOn(int durationSec) {
-    if (!canSend()) {
-        return;
-    }
-    MasterLink::sendRelaySlave(slotMac_, slotRelay_, "on", durationSec);
+int phaseSec(uint8_t hours, uint8_t mins) {
+    const int sec = static_cast<int>(hours) * 60 + static_cast<int>(mins);
+    return (sec > 0 ? sec : 1) * 60;
 }
 
-void sendOff() {
+void sendCycle(bool start) {
     if (!canSend()) {
         return;
     }
-    MasterLink::sendRelaySlave(slotMac_, slotRelay_, "off", 0);
+    if (!start) {
+        MasterLink::sendRelaySlave(slotMac_, slotRelay_, "cycle_stop", 0, 0, "cycle_stop");
+        return;
+    }
+    MasterLink::sendRelaySlave(slotMac_, slotRelay_, "cycle", phaseSec(onH_, onM_), phaseSec(offH_, offM_),
+                               "cycle");
 }
 
 void stopRun(bool userStop) {
@@ -101,7 +114,7 @@ void stopRun(bool userStop) {
         return;
     }
     if (userStop) {
-        sendOff();
+        sendCycle(false);
     }
     phase_ = Phase::Idle;
     RelayActuationLock::set(slotMac_, slotRelay_, RelayActuationLock::Owner::Idle);
@@ -124,32 +137,41 @@ void updatePhaseDisplay() {
     }
     const unsigned long elapsedMs = millis() - phaseStartMs_;
     const uint32_t elapsedSec = static_cast<uint32_t>(elapsedMs / 1000UL);
-    const uint32_t totalSec =
-        (phase_ == Phase::On) ? static_cast<uint32_t>(onMin_) * 60U : static_cast<uint32_t>(offMin_) * 60U;
+    const uint32_t totalSec = (phase_ == Phase::On) ? (static_cast<uint32_t>(onH_) * 60U + onM_) * 60U
+                                                    : (static_cast<uint32_t>(offH_) * 60U + offM_) * 60U;
     uint32_t rem = (elapsedSec >= totalSec) ? 0U : totalSec - elapsedSec;
-    const uint32_t mm = rem / 60U;
-    const uint32_t ss = rem % 60U;
-    char buf[16];
+    const uint32_t hh = rem / 3600U;
+    const uint32_t mm = (rem % 3600U) / 60U;
+    char buf[24];
     if (phase_ == Phase::On) {
-        snprintf(buf, sizeof(buf), Strings::tr(Msg::RelaysTimerPhaseOnFmt), mm, ss);
+        snprintf(buf, sizeof(buf), "ON %02u:%02u", static_cast<unsigned>(hh), static_cast<unsigned>(mm));
         lv_obj_set_style_text_color(phaseLbl_, AppTheme::accent(), 0);
     } else {
-        snprintf(buf, sizeof(buf), Strings::tr(Msg::RelaysTimerPhaseOffFmt), mm, ss);
+        snprintf(buf, sizeof(buf), "OFF %02u:%02u", static_cast<unsigned>(hh), static_cast<unsigned>(mm));
         lv_obj_set_style_text_color(phaseLbl_, AppTheme::muted(), 0);
     }
     lv_label_set_text(phaseLbl_, buf);
 }
 
+void paintHm(lv_obj_t *btn, unsigned value, bool selected) {
+    if (!btn) {
+        return;
+    }
+    char buf[4];
+    snprintf(buf, sizeof(buf), "%02u", value);
+    lv_obj_t *lbl = lv_obj_get_child(btn, 0);
+    if (lbl) {
+        lv_label_set_text(lbl, buf);
+        lv_obj_set_style_text_color(lbl, selected ? AppTheme::bg() : AppTheme::text(), 0);
+    }
+    lv_obj_set_style_bg_color(btn, selected ? AppTheme::accent() : AppTheme::surfaceAlt(), 0);
+}
+
 void refreshDraftLabels() {
-    char buf[16];
-    if (onValLbl_) {
-        snprintf(buf, sizeof(buf), "%u", static_cast<unsigned>(onMin_));
-        lv_label_set_text(onValLbl_, buf);
-    }
-    if (offValLbl_) {
-        snprintf(buf, sizeof(buf), "%u", static_cast<unsigned>(offMin_));
-        lv_label_set_text(offValLbl_, buf);
-    }
+    paintHm(onHBtn_, onH_, !onEditMin_);
+    paintHm(onMBtn_, onM_, onEditMin_);
+    paintHm(offHBtn_, offH_, !offEditMin_);
+    paintHm(offMBtn_, offM_, offEditMin_);
     updatePhaseDisplay();
 }
 
@@ -189,8 +211,8 @@ void refreshUiState() {
     (void)editOpa;
 }
 
-lv_obj_t *makePmRow(lv_obj_t *parent, lv_coord_t y, const char *title, lv_obj_t **valOut,
-                    lv_event_cb_t onM, lv_event_cb_t onP) {
+lv_obj_t *makeHmRow(lv_obj_t *parent, lv_coord_t y, const char *title, lv_obj_t **hBtn, lv_obj_t **mBtn,
+                    lv_event_cb_t onH, lv_event_cb_t onM, lv_event_cb_t onMinus, lv_event_cb_t onPlus) {
     lv_obj_t *row = lv_obj_create(parent);
     lv_obj_remove_style_all(row);
     lv_obj_set_size(row, kRowW, kBtnH);
@@ -206,18 +228,26 @@ lv_obj_t *makePmRow(lv_obj_t *parent, lv_coord_t y, const char *title, lv_obj_t 
     lv_obj_set_style_text_font(t, &lv_font_montserrat_14, 0);
     lv_obj_align(t, LV_ALIGN_LEFT_MID, 8, 0);
 
-    lv_obj_t *v = lv_label_create(row);
-    lv_obj_set_style_text_color(v, AppTheme::text(), 0);
-    lv_obj_set_style_text_font(v, &lv_font_montserrat_20, 0);
-    lv_obj_align(v, LV_ALIGN_CENTER, 0, 0);
-    if (valOut) {
-        *valOut = v;
+    lv_obj_t *hb = UiKit::makeSecondaryButton(row, "00", 56, kBtnH, onH);
+    lv_obj_align(hb, LV_ALIGN_LEFT_MID, 78, 0);
+    lv_obj_t *colon = lv_label_create(row);
+    lv_label_set_text(colon, ":");
+    lv_obj_set_style_text_color(colon, AppTheme::text(), 0);
+    lv_obj_set_style_text_font(colon, &lv_font_montserrat_20, 0);
+    lv_obj_align(colon, LV_ALIGN_LEFT_MID, 138, 0);
+    lv_obj_t *mb = UiKit::makeSecondaryButton(row, "00", 56, kBtnH, onM);
+    lv_obj_align(mb, LV_ALIGN_LEFT_MID, 150, 0);
+    if (hBtn) {
+        *hBtn = hb;
+    }
+    if (mBtn) {
+        *mBtn = mb;
     }
 
-    lv_obj_t *m = UiKit::makeSecondaryButton(row, "-", 52, kBtnH, onM);
-    lv_obj_align(m, LV_ALIGN_RIGHT_MID, -(8 + 52 + 4), 0);
-    lv_obj_t *p = UiKit::makeSecondaryButton(row, "+", 52, kBtnH, onP);
-    lv_obj_align(p, LV_ALIGN_RIGHT_MID, -8, 0);
+    lv_obj_t *minus = UiKit::makeSecondaryButton(row, "-", 52, kBtnH, onMinus);
+    lv_obj_align(minus, LV_ALIGN_RIGHT_MID, -(8 + 52 + 4), 0);
+    lv_obj_t *plus = UiKit::makeSecondaryButton(row, "+", 52, kBtnH, onPlus);
+    lv_obj_align(plus, LV_ALIGN_RIGHT_MID, -8, 0);
     return row;
 }
 
@@ -226,7 +256,8 @@ void buildDetail() {
         return;
     }
     lv_obj_clean(listHost_);
-    phaseLbl_ = onValLbl_ = offValLbl_ = statusLbl_ = startBtn_ = stopBtn_ = lockLbl_ = nullptr;
+    phaseLbl_ = statusLbl_ = startBtn_ = stopBtn_ = lockLbl_ = nullptr;
+    onHBtn_ = onMBtn_ = offHBtn_ = offMBtn_ = nullptr;
     built_ = false;
 
     lv_coord_t y = 2;
@@ -255,9 +286,11 @@ void buildDetail() {
     lv_obj_set_pos(phaseLbl_, 0, y);
     y += 34;
 
-    makePmRow(listHost_, y, Strings::tr(Msg::RelaysTimerMin), &onValLbl_, onOnMinus, onOnPlus);
+    makeHmRow(listHost_, y, Strings::tr(Msg::OnLabel), &onHBtn_, &onMBtn_, onOnH, onOnM, onOnMinus,
+              onOnPlus);
     y += kBtnH + 4;
-    makePmRow(listHost_, y, Strings::tr(Msg::RelaysTimerOffMin), &offValLbl_, onOffMinus, onOffPlus);
+    makeHmRow(listHost_, y, Strings::tr(Msg::OffLabel), &offHBtn_, &offMBtn_, onOffH, onOffM, onOffMinus,
+              onOffPlus);
     y += kBtnH + 8;
 
     const lv_coord_t halfW = (LCD_H_RES - 36) / 2;
@@ -286,35 +319,89 @@ void onBack(lv_event_t *) {
     NavShell::back();
 }
 
-void onOnMinus(lv_event_t *) {
-    if (phase_ != Phase::Idle || onMin_ <= 1) {
+void stepHm(uint8_t &h, uint8_t &m, bool editMin, int dir) {
+    if (editMin) {
+        int v = static_cast<int>(m) + dir;
+        if (v < 0) {
+            v = 0;
+        }
+        if (v > 59) {
+            v = 59;
+        }
+        m = static_cast<uint8_t>(v);
+    } else {
+        int v = static_cast<int>(h) + dir;
+        if (v < 0) {
+            v = 0;
+        }
+        if (v > 23) {
+            v = 23;
+        }
+        h = static_cast<uint8_t>(v);
+    }
+    if (h == 0 && m == 0) {
+        m = 1;
+    }
+}
+
+void onOnH(lv_event_t *) {
+    if (phase_ != Phase::Idle) {
         return;
     }
-    --onMin_;
+    onEditMin_ = false;
+    refreshDraftLabels();
+}
+void onOnM(lv_event_t *) {
+    if (phase_ != Phase::Idle) {
+        return;
+    }
+    onEditMin_ = true;
+    refreshDraftLabels();
+}
+void onOffH(lv_event_t *) {
+    if (phase_ != Phase::Idle) {
+        return;
+    }
+    offEditMin_ = false;
+    refreshDraftLabels();
+}
+void onOffM(lv_event_t *) {
+    if (phase_ != Phase::Idle) {
+        return;
+    }
+    offEditMin_ = true;
+    refreshDraftLabels();
+}
+
+void onOnMinus(lv_event_t *) {
+    if (phase_ != Phase::Idle) {
+        return;
+    }
+    stepHm(onH_, onM_, onEditMin_, -1);
     refreshDraftLabels();
 }
 
 void onOnPlus(lv_event_t *) {
-    if (phase_ != Phase::Idle || onMin_ >= 240) {
+    if (phase_ != Phase::Idle) {
         return;
     }
-    ++onMin_;
+    stepHm(onH_, onM_, onEditMin_, 1);
     refreshDraftLabels();
 }
 
 void onOffMinus(lv_event_t *) {
-    if (phase_ != Phase::Idle || offMin_ <= 1) {
+    if (phase_ != Phase::Idle) {
         return;
     }
-    --offMin_;
+    stepHm(offH_, offM_, offEditMin_, -1);
     refreshDraftLabels();
 }
 
 void onOffPlus(lv_event_t *) {
-    if (phase_ != Phase::Idle || offMin_ >= 240) {
+    if (phase_ != Phase::Idle) {
         return;
     }
-    ++offMin_;
+    stepHm(offH_, offM_, offEditMin_, 1);
     refreshDraftLabels();
 }
 
@@ -327,8 +414,7 @@ void onStart(lv_event_t *) {
         return;
     }
     RelayActuationLock::set(slotMac_, slotRelay_, RelayActuationLock::Owner::Timer);
-    const int sec = static_cast<int>(onMin_ * 60U);
-    sendOn(sec);
+    sendCycle(true);
     phase_ = Phase::On;
     phaseStartMs_ = millis();
     if (statusLbl_) {
@@ -348,18 +434,16 @@ void tickPhase() {
     const unsigned long elapsedMs = millis() - phaseStartMs_;
     const uint32_t elapsedSec = static_cast<uint32_t>(elapsedMs / 1000UL);
     if (phase_ == Phase::On) {
-        const uint32_t onSec = static_cast<uint32_t>(onMin_) * 60U;
+        const uint32_t onSec = (static_cast<uint32_t>(onH_) * 60U + onM_) * 60U;
         if (elapsedSec >= onSec) {
             phase_ = Phase::Off;
             phaseStartMs_ = millis();
-            sendOff();
         }
     } else if (phase_ == Phase::Off) {
-        const uint32_t offSec = static_cast<uint32_t>(offMin_) * 60U;
+        const uint32_t offSec = (static_cast<uint32_t>(offH_) * 60U + offM_) * 60U;
         if (elapsedSec >= offSec) {
             phase_ = Phase::On;
             phaseStartMs_ = millis();
-            sendOn(static_cast<int>(onMin_ * 60U));
         }
     }
     updatePhaseDisplay();
@@ -370,8 +454,12 @@ void tickPhase() {
 lv_obj_t *Screens::createRelayTimer(lv_obj_t *parent) {
     listHost_ = nullptr;
     phase_ = Phase::Idle;
-    onMin_ = 5;
-    offMin_ = 5;
+    onH_ = 0;
+    onM_ = 5;
+    offH_ = 0;
+    offM_ = 5;
+    onEditMin_ = true;
+    offEditMin_ = true;
     built_ = false;
 
     lv_obj_t *root = lv_obj_create(parent);

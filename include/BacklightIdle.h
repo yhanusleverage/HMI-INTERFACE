@@ -6,8 +6,8 @@
 /**
  * Política backlight HMI:
  * - AlwaysOn / AutoOff (60 s) / ForcedOff
- * - Auto-off solo sin alarma de proceso (pH·EC·ORP·DO BAJO/ALTO)
- * - Alarma → fuerza ON; al limpiar, deja ON (ForcedOff migra a AlwaysOn)
+ * - Alarma proceso (pH·EC·ORP·DO BAJO/ALTO) → wake ON una vez
+ * - AutoOff + alarma: apaga tras 3 min idle y se queda OFF hasta toque
  * - Primer toque con BL apagado = solo wake (no click)
  */
 namespace BacklightIdle {

@@ -2,6 +2,7 @@
 #include "Config.h"
 #include "DisplayHal.h"
 #include "NavShell.h"
+#include "Screens.h"
 #include "DataStore.h"
 #include "Simulator.h"
 #include "MasterLink.h"
@@ -173,11 +174,12 @@ void loop() {
     Simulator::tick();
 #endif
     MasterLink::loop();
+    RelayCycleConfig::tick();
 #if !UART_BENCH
     // RulesEngine::tick(); /* desactivado — Rules fuera del HMI */
-    RelayCycleConfig::tick();
     WifiConfig::loop();
 #endif
+    Screens::tickBootReady();
     if (DisplayHal::ready()) {
         NavShell::tick();
         DisplayHal::loop();

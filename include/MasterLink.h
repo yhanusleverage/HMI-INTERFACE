@@ -33,17 +33,31 @@ void sendMasterReboot();
 void sendFactoryReset();
 /** Relé PCF del master (0..7). state: "on"/"off". duration segundos (0=forever). */
 void sendRelayLocal(uint8_t relay, const char *state, int durationSec);
-/** Relé en slave ESP-NOW. mac "AA:BB:...". */
-void sendRelaySlave(const char *mac, uint8_t relay, const char *state, int durationSec);
+/** Relé en slave ESP-NOW. mac "AA:BB:...". mode "cycle" usa cycleOffSec (segundos OFF). */
+void sendRelaySlave(const char *mac, uint8_t relay, const char *state, int durationSec,
+                    int cycleOffSec = 0, const char *mode = nullptr);
 bool linkOk();
 /** Último sys_info del Master (vacío si nunca llegó). */
 const char *masterDeviceId();
 bool masterCloudOk();
 bool masterSysInfoValid();
+/** Snapshot sys_info (debug Sistema). */
+bool masterWifiConnected();
+bool masterHasWifi();
+const char *masterSsid();
+const char *masterDeviceName();
+const char *masterLocation();
+/** Último cmd_ack: action + 0=ninguno 1=ok 2=fail. */
+const char *lastCmdAction();
+uint8_t lastCmdAckState();
 /** true si el Master respondió cmd_ack de proceso (bridge dose/loop/relay activo). */
 bool processBridgeOk();
 /** 0=ninguno 1=ok 2=fail — último cmd_ack de proceso. */
 uint8_t lastProcessAckState();
+/** Vacía TX UART (antes de reboot HMI). */
+void flush();
+/** Limpia último cmd_ack (antes de esperar master_reboot). */
+void clearLastCmdAck();
 }
 
 #endif

@@ -234,10 +234,6 @@ void onContinue(lv_event_t *) {
     commitDraft();
     NavShell::wizardContinue();
 }
-void onSkip(lv_event_t *) {
-    hideNumericKb();
-    NavShell::wizardContinue();
-}
 
 void refreshNums() {
     char buf[24];
@@ -495,8 +491,6 @@ lv_obj_t *Screens::createReservoir(lv_obj_t *parent) {
         lv_obj_t *cont = UiKit::makePrimaryButton(hdr, Strings::tr(Msg::Continue), onContinue);
         lv_obj_set_size(cont, 100, 32);
         lv_obj_align(cont, LV_ALIGN_RIGHT_MID, -8, 0);
-        lv_obj_t *sk = UiKit::makeSecondaryButton(hdr, Strings::tr(Msg::Skip), 70, 32, onSkip);
-        lv_obj_align(sk, LV_ALIGN_RIGHT_MID, -116, 0);
     } else {
         UiKit::styleHeader(root_, Strings::tr(Msg::ReservoirControlTitle), onBack);
     }

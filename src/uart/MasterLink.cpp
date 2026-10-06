@@ -14,8 +14,10 @@
 #include <math.h>
 
 static HardwareSerial MasterSerial(1);
-static char lineBuf[768];
+/** t:slaves con Master+varios Atlas+8 relés supera 768 B (IncompleteInput). */
+static char lineBuf[4608];
 static size_t lineLen = 0;
+static bool discardRestOfLine = false;
 static unsigned long lastRxMs = 0;
 static bool linked = false;
 static char masterDeviceIdBuf[40] = {};
@@ -24,6 +26,13 @@ static bool masterSysInfoValidFlag = false;
 static uint8_t wifiConfigAckState_ = 0;
 static bool processBridgeOk_ = false;
 static uint8_t lastProcessAckState_ = 0;
+static bool masterWifiConnectedFlag = false;
+static bool masterHasWifiFlag = false;
+static char masterSsidBuf[33] = {};
+static char masterDeviceNameBuf[32] = {};
+static char masterLocationBuf[32] = {};
+static char lastCmdActionBuf[24] = {};
+static uint8_t lastCmdAckState_ = 0;
 #if UART_LINK_DEBUG
 static uint32_t rxByteCount = 0;
 static uint32_t rxLineCount = 0;
@@ -103,6 +112,7 @@ static void logRxSummary(const char *line, const char *t) {
 static void emitJson(JsonDocument &doc) {
     serializeJson(doc, MasterSerial);
     MasterSerial.print('\n');
+    MasterSerial.flush();
     /* No volcar password WiFi al Serial. */
     const char *action = doc["action"] | "";
     if (strcmp(action, "wifi_config") == 0) {
@@ -116,6 +126,8 @@ static void emitJson(JsonDocument &doc) {
 }
 
 void MasterLink::begin() {
+    /* El JSON t:slaves cabe en varios KB; el RX por defecto (256 B) lo parte. */
+    MasterSerial.setRxBufferSize(8192);
     MasterSerial.begin(MASTER_UART_BAUD, SERIAL_8N1, MASTER_UART_RX, MASTER_UART_TX);
     lineLen = 0;
     linked = false;
@@ -149,6 +161,12 @@ static void handleLine(const char *line) {
     if (strcmp(t, "cmd_ack") == 0) {
         const bool ok = doc["ok"] | false;
         lastProcessAckState_ = ok ? 1 : 2;
+        lastCmdAckState_ = ok ? 1 : 2;
+        const char *act = doc["action"] | "";
+        if (act[0]) {
+            strncpy(lastCmdActionBuf, act, sizeof(lastCmdActionBuf) - 1);
+            lastCmdActionBuf[sizeof(lastCmdActionBuf) - 1] = '\0';
+        }
         if (ok) {
             processBridgeOk_ = true;
         }
@@ -179,16 +197,99 @@ static void handleLine(const char *line) {
         if (doc["process_bridge"] | false) {
             processBridgeOk_ = true;
         }
-        const bool hasWifi = doc["has_wifi"] | false;
-        const char *ssid = hasWifi ? (doc["ssid"] | "") : "";
-        const char *pass = hasWifi ? (doc["password"] | "") : "";
-        MasterWifiDraft::applyFromMaster(ssid, pass, doc["email"] | "", doc["device_name"] | "",
-                                         doc["location"] | "");
+        masterHasWifiFlag = doc["has_wifi"] | false;
+        masterWifiConnectedFlag = doc["wifi_connected"] | false;
+        const char *ssid = masterHasWifiFlag ? (doc["ssid"] | "") : "";
+        const char *pass = masterHasWifiFlag ? (doc["password"] | "") : "";
+        strncpy(masterSsidBuf, ssid, sizeof(masterSsidBuf) - 1);
+        masterSsidBuf[sizeof(masterSsidBuf) - 1] = '\0';
+        const char *dn = doc["device_name"] | "";
+        const char *loc = doc["location"] | "";
+        strncpy(masterDeviceNameBuf, dn, sizeof(masterDeviceNameBuf) - 1);
+        masterDeviceNameBuf[sizeof(masterDeviceNameBuf) - 1] = '\0';
+        strncpy(masterLocationBuf, loc, sizeof(masterLocationBuf) - 1);
+        masterLocationBuf[sizeof(masterLocationBuf) - 1] = '\0';
+        MasterWifiDraft::applyFromMaster(ssid, pass, doc["email"] | "", dn, loc);
         markLinkAlive();
         return;
     }
     if (strcmp(t, "slaves") == 0) {
         SlaveInventory::applyFromJson(line);
+        size_t localN = 0;
+        size_t atlasN = 0;
+        const size_t nT = SlaveInventory::count();
+        for (size_t i = 0; i < nT; ++i) {
+            const SlaveInventory::Target *tgt = SlaveInventory::at(i);
+            if (SlaveInventory::isEspNow(tgt)) {
+                ++atlasN;
+            } else if (tgt && tgt->local) {
+                ++localN;
+            }
+        }
+        Serial.printf("[UART] inventario local=%u atlas=%u%s\n",
+                      static_cast<unsigned>(localN), static_cast<unsigned>(atlasN),
+                      atlasN == 0 ? " (hub Atlas offline esperado)" : "");
+        for (size_t i = 0; i < nT; ++i) {
+            const SlaveInventory::Target *tgt = SlaveInventory::at(i);
+            if (!tgt) {
+                continue;
+            }
+            Serial.printf("[UART]   %s mac=%s name=%s online=%d relays=%u\n",
+                          tgt->local ? "local" : "atlas", tgt->mac,
+                          tgt->name[0] ? tgt->name : "-", tgt->online ? 1 : 0,
+                          static_cast<unsigned>(tgt->numRelays));
+        }
+        const size_t hubIx = SlaveInventory::firstEspNowIndex();
+        const SlaveInventory::Target *hub =
+            hubIx != SIZE_MAX ? SlaveInventory::at(hubIx) : nullptr;
+        Serial.printf("[UART] hub=%s\n", hub && hub->mac[0] ? hub->mac : "(ninguno)");
+        markLinkAlive();
+        return;
+    }
+    if (strcmp(t, "plant_cfg") == 0) {
+        JsonArray pumps = doc["pumps"].as<JsonArray>();
+        const char *names[NUTRIENT_MAX];
+        float mls[NUTRIENT_MAX];
+        uint8_t relays[NUTRIENT_MAX];
+        char nameStore[NUTRIENT_MAX][NUTRIENT_NAME_LEN];
+        size_t nQty = 0;
+        for (JsonObject p : pumps) {
+            const int relay = p["relay"] | 0;
+            const float ml = p["mlPerLiter"] | 0.0f;
+            const float flow = p["flowMlPerMin"] | 0.0f;
+            const char *name = p["name"] | "";
+            DoseChannel ch;
+            if (tryDoseFromRelayNumber(static_cast<uint8_t>(relay), &ch) && flow > 0.1f) {
+                PumpConfig::setFlowMlPerMin(ch, flow);
+            }
+            if (ml <= 0.05f || !name[0] || strncmp(name, "pump_r", 6) == 0) {
+                continue;
+            }
+            if (relay < 1 || relay > static_cast<int>(PUMP_RELAY_COUNT) || nQty >= NUTRIENT_MAX) {
+                continue;
+            }
+            strncpy(nameStore[nQty], name, NUTRIENT_NAME_LEN - 1);
+            nameStore[nQty][NUTRIENT_NAME_LEN - 1] = '\0';
+            names[nQty] = nameStore[nQty];
+            mls[nQty] = ml;
+            relays[nQty] = static_cast<uint8_t>(relay);
+            ++nQty;
+        }
+        if (nQty > 0) {
+            NutrientConfig::replaceQuantities(names, mls, relays, nQty);
+        }
+        Serial.printf("[UART] plant_cfg qty=%u\n", static_cast<unsigned>(nQty));
+        markLinkAlive();
+        return;
+    }
+    if (strcmp(t, "relay") == 0) {
+        const char *mac = doc["mac"] | "";
+        const int relay = doc["relay"] | -1;
+        const bool on = (doc["on"] | 0) != 0;
+        if (mac[0] && relay >= 0 && relay < static_cast<int>(SlaveInventory::kMaxRelays)) {
+            SlaveInventory::applyRelayBit(mac, static_cast<uint8_t>(relay), on);
+            Serial.printf("[UART] relay mac=%s r=%d on=%d\n", mac, relay, on ? 1 : 0);
+        }
         markLinkAlive();
         return;
     }
@@ -246,6 +347,11 @@ void MasterLink::loop() {
         rxByteCount++;
 #endif
         if (c == '\n' || c == '\r') {
+            if (discardRestOfLine) {
+                discardRestOfLine = false;
+                lineLen = 0;
+                continue;
+            }
             if (lineLen > 0) {
                 lineBuf[lineLen] = '\0';
                 handleLine(lineBuf);
@@ -253,12 +359,15 @@ void MasterLink::loop() {
             }
             continue;
         }
+        if (discardRestOfLine) {
+            continue;
+        }
         if (lineLen + 1 < sizeof(lineBuf)) {
             lineBuf[lineLen++] = c;
         } else {
-#if UART_LINK_DEBUG
-            Serial.println("[UART RX] linea truncada (>768 B)");
-#endif
+            Serial.printf("[UART RX] linea truncada (>%u B) — resto descartado\n",
+                          static_cast<unsigned>(sizeof(lineBuf) - 1));
+            discardRestOfLine = true;
             lineLen = 0;
         }
     }
@@ -462,7 +571,8 @@ void MasterLink::sendRelayLocal(uint8_t relay, const char *action, int durationS
     emitJson(doc);
 }
 
-void MasterLink::sendRelaySlave(const char *mac, uint8_t relay, const char *action, int durationSec) {
+void MasterLink::sendRelaySlave(const char *mac, uint8_t relay, const char *action, int durationSec,
+                                 int cycleOffSec, const char *mode) {
     JsonDocument doc;
     doc["t"] = "cmd";
     doc["action"] = "relay_slave";
@@ -470,6 +580,12 @@ void MasterLink::sendRelaySlave(const char *mac, uint8_t relay, const char *acti
     doc["relay"] = relay;
     doc["state"] = action ? action : "off";
     doc["duration"] = durationSec;
+    if (cycleOffSec > 0) {
+        doc["cycleOff"] = cycleOffSec;
+    }
+    if (mode && mode[0] != '\0') {
+        doc["mode"] = mode;
+    }
     emitJson(doc);
 }
 
@@ -481,6 +597,27 @@ bool MasterLink::masterCloudOk() { return masterCloudOkFlag; }
 
 bool MasterLink::masterSysInfoValid() { return masterSysInfoValidFlag; }
 
+bool MasterLink::masterWifiConnected() { return masterWifiConnectedFlag; }
+
+bool MasterLink::masterHasWifi() { return masterHasWifiFlag; }
+
+const char *MasterLink::masterSsid() { return masterSsidBuf; }
+
+const char *MasterLink::masterDeviceName() { return masterDeviceNameBuf; }
+
+const char *MasterLink::masterLocation() { return masterLocationBuf; }
+
+const char *MasterLink::lastCmdAction() { return lastCmdActionBuf; }
+
+uint8_t MasterLink::lastCmdAckState() { return lastCmdAckState_; }
+
 bool MasterLink::processBridgeOk() { return processBridgeOk_; }
 
 uint8_t MasterLink::lastProcessAckState() { return lastProcessAckState_; }
+
+void MasterLink::flush() { MasterSerial.flush(); }
+
+void MasterLink::clearLastCmdAck() {
+    lastCmdAckState_ = 0;
+    lastCmdActionBuf[0] = '\0';
+}

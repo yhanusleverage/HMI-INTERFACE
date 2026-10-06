@@ -28,13 +28,17 @@ void begin();
 void clear();
 /** Parsea JSON raíz con t=slaves y array slaves[]. */
 void applyFromJson(const char *jsonLine);
+/** Un relé confirmado por UART `t:relay`. */
+void applyRelayBit(const char *mac, uint8_t relay, bool on);
+/** true si ese relé tuvo confirmación después de afterMs. */
+bool confirmedBit(const char *mac, uint8_t relay, unsigned long afterMs, bool *onOut);
 size_t count();
 const Target *at(size_t i);
 /** Índice del target local Master, o SIZE_MAX si falta. */
 size_t localIndex();
 /** true si es slave ESP-NOW (Atlas / otros), no Master local. */
 bool isEspNow(const Target *t);
-/** Primer slave ESP-NOW, o SIZE_MAX. */
+/** Primer Atlas online; si ninguno, el primer ESP-NOW. SIZE_MAX si no hay. */
 size_t firstEspNowIndex();
 unsigned long lastUpdateMs();
 

@@ -7,6 +7,9 @@ namespace {
 SlaveInventory::Target targets_[SlaveInventory::kMaxTargets];
 size_t count_ = 0;
 unsigned long lastMs_ = 0;
+char lastBitMac_[SlaveInventory::kMacLen] = {};
+uint8_t lastBitRelay_ = 0;
+unsigned long lastBitMs_ = 0;
 
 void copyStr(char *dst, size_t n, const char *src) {
     if (!dst || n == 0) {
@@ -39,6 +42,9 @@ void SlaveInventory::begin() { clear(); }
 void SlaveInventory::clear() {
     count_ = 0;
     lastMs_ = 0;
+    lastBitMs_ = 0;
+    lastBitMac_[0] = '\0';
+    lastBitRelay_ = 0;
     memset(targets_, 0, sizeof(targets_));
 }
 
@@ -103,6 +109,48 @@ void SlaveInventory::applyFromJson(const char *jsonLine) {
     lastMs_ = millis();
 }
 
+void SlaveInventory::applyRelayBit(const char *mac, uint8_t relay, bool on) {
+    if (!mac || !mac[0] || relay >= kMaxRelays) {
+        return;
+    }
+    for (size_t i = 0; i < count_; ++i) {
+        if (strcmp(targets_[i].mac, mac) != 0) {
+            continue;
+        }
+        targets_[i].relayOn[relay] = on;
+        if (relay >= targets_[i].numRelays) {
+            targets_[i].numRelays = static_cast<uint8_t>(relay + 1);
+        }
+        strncpy(lastBitMac_, mac, sizeof(lastBitMac_) - 1);
+        lastBitMac_[sizeof(lastBitMac_) - 1] = '\0';
+        lastBitRelay_ = relay;
+        lastBitMs_ = millis();
+        lastMs_ = lastBitMs_;
+        return;
+    }
+}
+
+bool SlaveInventory::confirmedBit(const char *mac, uint8_t relay, unsigned long afterMs, bool *onOut) {
+    if (!mac || !mac[0] || relay >= kMaxRelays || lastBitMs_ == 0) {
+        return false;
+    }
+    if (strcmp(lastBitMac_, mac) != 0 || lastBitRelay_ != relay) {
+        return false;
+    }
+    if ((long)(lastBitMs_ - afterMs) < 0) {
+        return false;
+    }
+    if (onOut) {
+        for (size_t i = 0; i < count_; ++i) {
+            if (strcmp(targets_[i].mac, mac) == 0) {
+                *onOut = targets_[i].relayOn[relay];
+                return true;
+            }
+        }
+    }
+    return true;
+}
+
 size_t SlaveInventory::count() { return count_; }
 
 const SlaveInventory::Target *SlaveInventory::at(size_t i) {
@@ -132,12 +180,19 @@ bool SlaveInventory::isEspNow(const Target *t) {
 }
 
 size_t SlaveInventory::firstEspNowIndex() {
+    size_t any = SIZE_MAX;
     for (size_t i = 0; i < count_; ++i) {
-        if (isEspNow(&targets_[i])) {
+        if (!isEspNow(&targets_[i])) {
+            continue;
+        }
+        if (any == SIZE_MAX) {
+            any = i;
+        }
+        if (targets_[i].online) {
             return i;
         }
     }
-    return SIZE_MAX;
+    return any;
 }
 
 unsigned long SlaveInventory::lastUpdateMs() { return lastMs_; }

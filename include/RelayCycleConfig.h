@@ -15,11 +15,14 @@ struct Entry {
     bool enabled;
     char mac[SlaveInventory::kMacLen];
     uint8_t relay; /* 0..7 */
-    uint8_t onHours;  /* 1..23 */
-    uint8_t offHours; /* 1..23 */
+    uint8_t onHours;  /* 0..23 */
+    uint8_t onMin;    /* 0..59 */
+    uint8_t offHours; /* 0..23 */
+    uint8_t offMin;   /* 0..59 */
     /* Runtime (no NVS) */
     unsigned long phaseStartMs;
     bool lastWantOn;
+    bool needsMasterPush;
 };
 
 void begin();
@@ -28,9 +31,10 @@ void save();
 
 const Entry *get(const char *mac, uint8_t relay);
 bool setEnabled(const char *mac, uint8_t relay, bool on);
-bool setHours(const char *mac, uint8_t relay, uint8_t onHours, uint8_t offHours);
+bool setHours(const char *mac, uint8_t relay, uint8_t onHours, uint8_t onMin, uint8_t offHours,
+              uint8_t offMin);
 
-/** Evalúa ciclos y manda relay_local / relay_slave si cambia estado. */
+/** Reintenta el cycle/cycle_stop pendiente si el UART no estaba listo. */
 void tick();
 
 }  // namespace RelayCycleConfig

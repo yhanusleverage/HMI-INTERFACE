@@ -34,7 +34,7 @@ enum class ScreenId : uint8_t {
     DisplayReadings,
     Setup,
     Sensors,
-    Rules, /* legacy UI; no menú — ver Controle */
+    Rules, /* hub visual de reglas de nivel */
     Controle,
     ControleAuto,
     Units,
@@ -95,6 +95,8 @@ bool isPhPumpChannel(DoseChannel ch);
 bool phPumpIsUp(DoseChannel ch);
 const char *currentAtlasMac();
 uint8_t currentAtlasRelay();
+/** Si el MAC Atlas actual no está online, pasa al primer ESP-NOW online. */
+void preferOnlineAtlas();
 }
 
 #endif

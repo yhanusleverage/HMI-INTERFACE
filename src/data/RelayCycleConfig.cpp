@@ -62,27 +62,37 @@ int ensureIx(const char *mac, uint8_t relay) {
     return ix;
 }
 
-bool wantOnNow(const RelayCycleConfig::Entry &e, unsigned long now) {
-    const uint32_t onSec = static_cast<uint32_t>(e.onHours) * 3600UL;
-    const uint32_t offSec = static_cast<uint32_t>(e.offHours) * 3600UL;
-    const uint32_t periodSec = onSec + offSec;
-    if (periodSec == 0) {
-        return false;
-    }
-    const unsigned long elapsedMs = now - e.phaseStartMs;
-    const uint32_t elapsedSec = static_cast<uint32_t>(elapsedMs / 1000UL);
-    const uint32_t pos = elapsedSec % periodSec;
-    return pos < onSec;
+bool atlasMac(const RelayCycleConfig::Entry &e) {
+    return e.mac[0] != '\0' && strcmp(e.mac, "local") != 0 &&
+           strcmp(e.mac, RelayAliasConfig::kPlaceholderMac) != 0;
 }
 
-void applyState(const RelayCycleConfig::Entry &e, bool on) {
-    const char *state = on ? "on" : "off";
-    /* Ciclo 24h solo sobre Atlas (ESP-NOW); nunca bombas Master ni MAC placeholder. */
-    if (strcmp(e.mac, "local") == 0 || e.mac[0] == '\0' ||
-        strcmp(e.mac, RelayAliasConfig::kPlaceholderMac) == 0) {
-        return;
+int phaseSec(uint8_t hours, uint8_t mins) {
+    const int sec = static_cast<int>(hours) * 3600 + static_cast<int>(mins) * 60;
+    return sec > 0 ? sec : 60;
+}
+
+/** Un solo cycle / cycle_stop. El esclavo cuenta; el HMI no alterna on/off. */
+bool pushMaster(RelayCycleConfig::Entry &e) {
+    if (!atlasMac(e)) {
+        e.needsMasterPush = false;
+        return true;
     }
-    MasterLink::sendRelaySlave(e.mac, e.relay, state, 0);
+    if (!MasterLink::linkOk()) {
+        return false;
+    }
+    if (e.enabled) {
+        if (!RelayActuationLock::allowsCiclo(e.mac, e.relay)) {
+            return false;
+        }
+        RelayActuationLock::set(e.mac, e.relay, RelayActuationLock::Owner::Ciclo);
+        MasterLink::sendRelaySlave(e.mac, e.relay, "cycle", phaseSec(e.onHours, e.onMin),
+                                   phaseSec(e.offHours, e.offMin), "cycle");
+    } else {
+        MasterLink::sendRelaySlave(e.mac, e.relay, "cycle_stop", 0, 0, "cycle_stop");
+    }
+    e.needsMasterPush = false;
+    return true;
 }
 
 }  // namespace
@@ -129,21 +139,32 @@ void RelayCycleConfig::load() {
         e.onHours = tok ? static_cast<uint8_t>(atoi(tok)) : 12;
         tok = strtok_r(nullptr, "|", &save);
         e.offHours = tok ? static_cast<uint8_t>(atoi(tok)) : 12;
-        if (e.onHours < 1) {
-            e.onHours = 1;
-        }
+        tok = strtok_r(nullptr, "|", &save);
+        e.onMin = tok ? static_cast<uint8_t>(atoi(tok)) : 0;
+        tok = strtok_r(nullptr, "|", &save);
+        e.offMin = tok ? static_cast<uint8_t>(atoi(tok)) : 0;
         if (e.onHours > 23) {
             e.onHours = 23;
-        }
-        if (e.offHours < 1) {
-            e.offHours = 1;
         }
         if (e.offHours > 23) {
             e.offHours = 23;
         }
+        if (e.onMin > 59) {
+            e.onMin = 59;
+        }
+        if (e.offMin > 59) {
+            e.offMin = 59;
+        }
+        if (e.onHours == 0 && e.onMin == 0) {
+            e.onMin = 1;
+        }
+        if (e.offHours == 0 && e.offMin == 0) {
+            e.offMin = 1;
+        }
         e.used = true;
         e.phaseStartMs = millis();
         e.lastWantOn = false;
+        e.needsMasterPush = e.enabled;
         ++count_;
     }
     prefs.end();
@@ -157,13 +178,15 @@ void RelayCycleConfig::save() {
     prefs.putUChar("rc_n", static_cast<uint8_t>(count_));
     for (size_t i = 0; i < count_; ++i) {
         char key[12];
-        char blob[80];
+        char blob[96];
         snprintf(key, sizeof(key), "rc_%u", static_cast<unsigned>(i));
-        snprintf(blob, sizeof(blob), "%s|%u|%u|%u|%u", entries_[i].mac,
+        snprintf(blob, sizeof(blob), "%s|%u|%u|%u|%u|%u|%u", entries_[i].mac,
                  static_cast<unsigned>(entries_[i].relay),
                  entries_[i].enabled ? 1u : 0u,
                  static_cast<unsigned>(entries_[i].onHours),
-                 static_cast<unsigned>(entries_[i].offHours));
+                 static_cast<unsigned>(entries_[i].offHours),
+                 static_cast<unsigned>(entries_[i].onMin),
+                 static_cast<unsigned>(entries_[i].offMin));
         prefs.putString(key, blob);
     }
     prefs.end();
@@ -185,14 +208,15 @@ bool RelayCycleConfig::setEnabled(const char *mac, uint8_t relay, bool on) {
     Entry &e = entries_[static_cast<size_t>(ix)];
     e.enabled = on;
     e.phaseStartMs = millis();
-    e.lastWantOn = false;
+    e.lastWantOn = on;
+    e.needsMasterPush = true;
     if (on) {
         if (RelayActuationLock::allowsCiclo(mac, relay)) {
             RelayActuationLock::set(mac, relay, RelayActuationLock::Owner::Ciclo);
-            applyState(e, true);
-            e.lastWantOn = true;
+            pushMaster(e);
         }
     } else {
+        pushMaster(e);
         if (RelayActuationLock::get(mac, relay) == RelayActuationLock::Owner::Ciclo) {
             RelayActuationLock::set(mac, relay, RelayActuationLock::Owner::Idle);
         }
@@ -201,27 +225,39 @@ bool RelayCycleConfig::setEnabled(const char *mac, uint8_t relay, bool on) {
     return true;
 }
 
-bool RelayCycleConfig::setHours(const char *mac, uint8_t relay, uint8_t onHours, uint8_t offHours) {
+bool RelayCycleConfig::setHours(const char *mac, uint8_t relay, uint8_t onHours, uint8_t onMin,
+                                uint8_t offHours, uint8_t offMin) {
     const int ix = ensureIx(mac, relay);
     if (ix < 0) {
         return false;
     }
-    if (onHours < 1) {
-        onHours = 1;
-    }
     if (onHours > 23) {
         onHours = 23;
-    }
-    if (offHours < 1) {
-        offHours = 1;
     }
     if (offHours > 23) {
         offHours = 23;
     }
+    if (onMin > 59) {
+        onMin = 59;
+    }
+    if (offMin > 59) {
+        offMin = 59;
+    }
+    if (onHours == 0 && onMin == 0) {
+        onMin = 1;
+    }
+    if (offHours == 0 && offMin == 0) {
+        offMin = 1;
+    }
     Entry &e = entries_[static_cast<size_t>(ix)];
     e.onHours = onHours;
+    e.onMin = onMin;
     e.offHours = offHours;
+    e.offMin = offMin;
     e.phaseStartMs = millis();
+    if (e.enabled) {
+        e.needsMasterPush = true;
+    }
     save();
     return true;
 }
@@ -237,17 +273,9 @@ void RelayCycleConfig::tick() {
     }
     for (size_t i = 0; i < count_; ++i) {
         Entry &e = entries_[i];
-        if (!e.used || !e.enabled) {
+        if (!e.used || !e.needsMasterPush) {
             continue;
         }
-        if (!RelayActuationLock::allowsCiclo(e.mac, e.relay)) {
-            continue;
-        }
-        const bool want = wantOnNow(e, now);
-        if (want == e.lastWantOn) {
-            continue;
-        }
-        applyState(e, want);
-        e.lastWantOn = want;
+        pushMaster(e);
     }
 }

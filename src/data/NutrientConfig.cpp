@@ -213,6 +213,31 @@ void NutrientConfig::save() {
     clearPhRelayNutrientConflicts();
 }
 
+void NutrientConfig::replaceQuantities(const char *const *names, const float *mlPerL,
+                                      const uint8_t *relays, size_t n) {
+    count_ = 0;
+    if (names && mlPerL && relays) {
+        for (size_t i = 0; i < n && count_ < NUTRIENT_MAX; ++i) {
+            if (!names[i] || !names[i][0] || mlPerL[i] <= 0.05f) {
+                continue;
+            }
+            if (relays[i] < 1 || relays[i] > PUMP_RELAY_COUNT) {
+                continue;
+            }
+            Item &it = items_[count_];
+            strncpy(it.name, names[i], NUTRIENT_NAME_LEN - 1);
+            it.name[NUTRIENT_NAME_LEN - 1] = '\0';
+            it.mlPerL = mlPerL[i];
+            it.relayNumber = relays[i];
+            ++count_;
+        }
+    }
+    save();
+    for (size_t i = 0; i < count_; ++i) {
+        mirrorNameToPumpIfSole(i);
+    }
+}
+
 float NutrientConfig::ecLow() { return ecLo_; }
 float NutrientConfig::ecHigh() { return ecHi_; }
 float NutrientConfig::phLow() { return phLo_; }
@@ -331,9 +356,14 @@ uint8_t NutrientConfig::phDownRelay() { return phDownRelay_; }
 
 void NutrientConfig::setPhUpRelay(uint8_t relay1to6OrZero) {
     const uint8_t r = clampRelayOrZero(relay1to6OrZero);
+    const uint8_t old = phUpRelay_;
     if (r == 0) {
+        if (old == 0) {
+            return;
+        }
         phUpRelay_ = 0;
         persistPhAndSync();
+        clearPumpLabelIfNoNutrient(old);
         return;
     }
     if (relaySharedByNutrient(r)) {
@@ -344,14 +374,22 @@ void NutrientConfig::setPhUpRelay(uint8_t relay1to6OrZero) {
     }
     phUpRelay_ = r;
     persistPhAndSync();
-    PumpConfig::setLabel(doseFromRelayNumber(r), Strings::tr(Msg::PhUpLabel));
+    if (old != 0 && old != r) {
+        clearPumpLabelIfNoNutrient(old);
+    }
+    PumpConfig::setLabelLocal(doseFromRelayNumber(r), Strings::tr(Msg::PhUpLabel));
 }
 
 void NutrientConfig::setPhDownRelay(uint8_t relay1to6OrZero) {
     const uint8_t r = clampRelayOrZero(relay1to6OrZero);
+    const uint8_t old = phDownRelay_;
     if (r == 0) {
+        if (old == 0) {
+            return;
+        }
         phDownRelay_ = 0;
         persistPhAndSync();
+        clearPumpLabelIfNoNutrient(old);
         return;
     }
     if (relaySharedByNutrient(r)) {
@@ -362,10 +400,15 @@ void NutrientConfig::setPhDownRelay(uint8_t relay1to6OrZero) {
     }
     phDownRelay_ = r;
     persistPhAndSync();
-    PumpConfig::setLabel(doseFromRelayNumber(r), Strings::tr(Msg::PhDownLabel));
+    if (old != 0 && old != r) {
+        clearPumpLabelIfNoNutrient(old);
+    }
+    PumpConfig::setLabelLocal(doseFromRelayNumber(r), Strings::tr(Msg::PhDownLabel));
 }
 
 void NutrientConfig::clearPhRelayNutrientConflicts() {
+    const uint8_t oldUp = phUpRelay_;
+    const uint8_t oldDown = phDownRelay_;
     bool changed = false;
     if (phUpRelay_ >= 1 && relaySharedByNutrient(phUpRelay_)) {
         phUpRelay_ = 0;
@@ -375,8 +418,15 @@ void NutrientConfig::clearPhRelayNutrientConflicts() {
         phDownRelay_ = 0;
         changed = true;
     }
-    if (changed) {
-        persistPhAndSync();
+    if (!changed) {
+        return;
+    }
+    persistPhAndSync();
+    if (phUpRelay_ == 0) {
+        clearPumpLabelIfNoNutrient(oldUp);
+    }
+    if (phDownRelay_ == 0) {
+        clearPumpLabelIfNoNutrient(oldDown);
     }
 }
 
