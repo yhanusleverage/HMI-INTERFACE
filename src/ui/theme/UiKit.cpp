@@ -310,8 +310,18 @@ void styleDarkKeyboard(lv_obj_t *kb) {
 
     lv_obj_set_style_bg_color(kb, AppTheme::surfaceAlt(), LV_PART_ITEMS | LV_STATE_CHECKED);
     lv_obj_set_style_text_color(kb, AppTheme::accent(), LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_style_bg_color(kb, AppTheme::surface(), LV_PART_ITEMS | LV_STATE_PRESSED);
-    lv_obj_set_style_border_color(kb, AppTheme::accent(), LV_PART_ITEMS | LV_STATE_PRESSED);
+    const lv_style_selector_t pressed = LV_PART_ITEMS | LV_STATE_PRESSED;
+    const lv_style_selector_t pressedFocus = LV_PART_ITEMS | LV_STATE_PRESSED | LV_STATE_FOCUSED;
+    lv_obj_set_style_bg_color(kb, AppTheme::accent(), pressed);
+    lv_obj_set_style_bg_opa(kb, LV_OPA_COVER, pressed);
+    lv_obj_set_style_text_color(kb, AppTheme::bg(), pressed);
+    lv_obj_set_style_border_color(kb, AppTheme::accentText(), pressed);
+    lv_obj_set_style_border_width(kb, 2, pressed);
+    lv_obj_set_style_bg_color(kb, AppTheme::accent(), pressedFocus);
+    lv_obj_set_style_bg_opa(kb, LV_OPA_COVER, pressedFocus);
+    lv_obj_set_style_text_color(kb, AppTheme::bg(), pressedFocus);
+    lv_obj_set_style_border_color(kb, AppTheme::accentText(), pressedFocus);
+    lv_obj_set_style_border_width(kb, 2, pressedFocus);
 }
 
 void styleNumericKeyboard(lv_obj_t *kb) {
