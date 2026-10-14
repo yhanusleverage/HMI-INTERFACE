@@ -58,6 +58,46 @@ uint8_t lastProcessAckState();
 void flush();
 /** Limpia último cmd_ack (antes de esperar master_reboot). */
 void clearLastCmdAck();
+
+/** Pide al Master la lista de reglas y el catálogo de nombres. */
+void requestRules();
+void sendRuleSet(const char *ruleId, bool enabled);
+void sendRuleDelete(const char *ruleId);
+/** until: vazio|baixo|medio|medio_alto|alto. id vacío crea; con id, actualiza esa regla. */
+void sendRuleCreate(const char *name, const char *mac, uint8_t relay, const char *until,
+                    int relay2 = -1, const char *until2 = nullptr, const char *id = nullptr);
+/** Pide al Master guardar el nombre del relé Atlas en Supabase. */
+void sendRelayRename(const char *mac, uint8_t relay, const char *name);
+/** Actualiza el catálogo en RAM para que Atlas muestre el nombre al volver. */
+void setRelayDisplayName(const char *mac, uint8_t relay, const char *name);
+
+struct RuleView {
+    bool used;
+    bool enabled;
+    char id[48];
+    char name[48];
+    char level[32];
+    char steps[4][64];
+    char macs[4][18];
+    char untils[4][16];
+    int relays[4];
+    uint8_t stepCount;
+};
+
+uint8_t ruleViewCount();
+const RuleView *ruleViewAt(uint8_t index);
+uint32_t ruleViewGeneration();
+void setRuleViewEnabled(uint8_t index, bool enabled);
+void dropRuleView(uint8_t index);
+
+uint32_t relayCatalogGeneration();
+uint8_t relayCatalogCount();
+const char *relayCatalogMac(uint8_t slot);
+const char *relayCatalogName(uint8_t slot, uint8_t relay);
+/** device_name de la web para esa MAC. Vacío si no hay. */
+const char *relayCatalogPlace(const char *mac);
+/** Nombre de Supabase para esa MAC y ese relé 0-7. Vacío si no hay. */
+const char *relayDisplayName(const char *mac, uint8_t relay);
 }
 
 #endif

@@ -10,7 +10,7 @@ void Simulator::begin() {
 #if DATA_SOURCE_SIM
     DataStore::instance().setTelemetry(5.8f, 470.0f, 20.0f, 362.0f, 9.1f, DataSource::Sim, true, true,
                                        true);
-#else
+#elseAO INVE
     Serial.println("[SIM] DATA_SOURCE_SIM=0 — esperando telemetria LIVE del Master");
 #endif
 }

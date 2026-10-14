@@ -12,15 +12,18 @@
 #include <cstring>
 
 /**
- * Relés L2: Atlas (ESP-NOW) primero → RelayActions; bombas Master abajo (relay_local).
- * Actualizar → slaves_req. Cortina Atlas si offline (velo hoy no bloquea Master).
+ * Relés Atlas (ESP-NOW) → RelayActions.
+ * Las bombas dosificadoras viven en Bombas / Manual, no en este hub.
  */
 
 namespace {
 
 void onBack(lv_event_t *) { NavShell::back(); }
 
-void onRefresh(lv_event_t *) { MasterLink::requestSlaves(); }
+void onRefresh(lv_event_t *) {
+    MasterLink::requestSlaves();
+    MasterLink::requestRules();
+}
 
 void onPick(lv_event_t *e) {
     const uint8_t r =
@@ -28,18 +31,11 @@ void onPick(lv_event_t *e) {
     NavShell::goToAtlasRelay(r);
 }
 
-void onPickMaster(lv_event_t *e) {
-    const uint8_t r =
-        static_cast<uint8_t>(reinterpret_cast<uintptr_t>(lv_event_get_user_data(e)));
-    NavShell::goToMasterLocalRelay(r);
-}
-
 lv_obj_t *relayTitleLbls_[SlaveInventory::kMaxRelays] = {};
 lv_obj_t *relayHintLbls_[SlaveInventory::kMaxRelays] = {};
-lv_obj_t *masterTitleLbls_[SlaveInventory::kMaxRelays] = {};
+lv_obj_t *pageTitle_ = nullptr;
 lv_obj_t *veil_ = nullptr;
 lv_obj_t *veilHint_ = nullptr;
-lv_obj_t *masterSection_ = nullptr;
 
 void resolveAtlasMac(char *buf, size_t n) {
     if (!buf || n == 0) {
@@ -76,7 +72,6 @@ bool atlasHubBlocked() {
 }
 
 void applyAtlasVeil() {
-    /* Master local debe quedar usable; no velo a pantalla completa. */
     if (veil_) {
         lv_obj_add_flag(veil_, LV_OBJ_FLAG_HIDDEN);
     }
@@ -85,14 +80,25 @@ void applyAtlasVeil() {
 void syncRelaysHubRows() {
     char mac[SlaveInventory::kMacLen];
     resolveAtlasMac(mac, sizeof(mac));
+    if (pageTitle_) {
+        const char *place = MasterLink::relayCatalogPlace(mac);
+        if (place && place[0]) {
+            char title[64];
+            snprintf(title, sizeof(title), "Atlas: %s", place);
+            lv_label_set_text(pageTitle_, title);
+        } else {
+            lv_label_set_text(pageTitle_, Strings::tr(Msg::RelaysTitle));
+        }
+    }
     char tag[24];
     for (uint8_t r = 0; r < SlaveInventory::kMaxRelays; ++r) {
         if (!relayTitleLbls_[r]) {
             continue;
         }
         snprintf(tag, sizeof(tag), Strings::tr(Msg::AtlasRelayFmt), static_cast<int>(r + 1));
+        const char *web = MasterLink::relayDisplayName(mac, r);
         const char *alias = RelayAliasConfig::getName(mac, r);
-        const char *title = (alias && alias[0]) ? alias : tag;
+        const char *title = (web && web[0]) ? web : ((alias && alias[0]) ? alias : tag);
         char hintBuf[48];
         hintBuf[0] = '\0';
         if (SlaveInventory::isRelayLocked(mac, r)) {
@@ -102,20 +108,13 @@ void syncRelaysHubRows() {
             } else {
                 snprintf(hintBuf, sizeof(hintBuf), "%s", Strings::tr(Msg::RelaysLockByRule));
             }
-        } else if (alias && alias[0]) {
+        } else if (!(web && web[0]) && alias && alias[0]) {
             snprintf(hintBuf, sizeof(hintBuf), "%s", tag);
         }
         lv_label_set_text(relayTitleLbls_[r], title);
         if (relayHintLbls_[r]) {
             lv_label_set_text(relayHintLbls_[r], hintBuf);
         }
-    }
-    for (uint8_t r = 0; r < SlaveInventory::kMaxRelays; ++r) {
-        if (!masterTitleLbls_[r]) {
-            continue;
-        }
-        snprintf(tag, sizeof(tag), "R%d", static_cast<int>(r + 1));
-        lv_label_set_text(masterTitleLbls_[r], tag);
     }
 }
 
@@ -125,17 +124,16 @@ lv_obj_t *Screens::createRelaysHub(lv_obj_t *parent) {
     for (uint8_t r = 0; r < SlaveInventory::kMaxRelays; ++r) {
         relayTitleLbls_[r] = nullptr;
         relayHintLbls_[r] = nullptr;
-        masterTitleLbls_[r] = nullptr;
     }
     veil_ = nullptr;
     veilHint_ = nullptr;
-    masterSection_ = nullptr;
+    pageTitle_ = nullptr;
 
     lv_obj_t *root = lv_obj_create(parent);
     UiKit::styleScreen(root);
     lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
 
-    UiKit::styleHeader(root, Strings::tr(Msg::RelaysTitle), onBack, 108);
+    pageTitle_ = UiKit::styleHeader(root, Strings::tr(Msg::RelaysTitle), onBack, 108);
     lv_obj_t *ref =
         UiKit::makeSecondaryButton(root, Strings::tr(Msg::RulesRefresh), 100, AppTheme::BACK_H,
                                    onRefresh);
@@ -167,7 +165,6 @@ lv_obj_t *Screens::createRelaysHub(lv_obj_t *parent) {
     const lv_coord_t step = AppTheme::HUB_ROW_H + 4;
     char tag[24];
 
-    /* Atlas primero (ESP-NOW) — relay_slave. Bombas Master abajo — relay_local. */
     lv_obj_t *atlasHdr = lv_label_create(list);
     lv_label_set_text(atlasHdr, Strings::tr(Msg::RelaysTitle));
     lv_obj_set_style_text_color(atlasHdr, AppTheme::muted(), 0);
@@ -177,9 +174,10 @@ lv_obj_t *Screens::createRelaysHub(lv_obj_t *parent) {
 
     for (uint8_t r = 0; r < SlaveInventory::kMaxRelays; ++r) {
         snprintf(tag, sizeof(tag), Strings::tr(Msg::AtlasRelayFmt), static_cast<int>(r + 1));
+        const char *web = MasterLink::relayDisplayName(mac, r);
         const char *alias = RelayAliasConfig::getName(mac, r);
-        const char *title = (alias && alias[0]) ? alias : tag;
-        const char *rowHint = (alias && alias[0]) ? tag : "";
+        const char *title = (web && web[0]) ? web : ((alias && alias[0]) ? alias : tag);
+        const char *rowHint = (!(web && web[0]) && alias && alias[0]) ? tag : "";
         lv_obj_t *row = UiKit::makeHubMenuRow(list, title, rowHint, onPick,
                                               reinterpret_cast<void *>(static_cast<uintptr_t>(r)));
         lv_obj_set_pos(row, 12, y);
@@ -188,25 +186,9 @@ lv_obj_t *Screens::createRelaysHub(lv_obj_t *parent) {
         y += step;
     }
 
-    y += 8;
-    lv_obj_t *masterHdr = lv_label_create(list);
-    lv_label_set_text(masterHdr, Strings::tr(Msg::MasterLocalRelays));
-    lv_obj_set_style_text_color(masterHdr, AppTheme::muted(), 0);
-    lv_obj_set_style_text_font(masterHdr, &lv_font_montserrat_14, 0);
-    lv_obj_set_pos(masterHdr, 12, y);
-    y += 22;
-    masterSection_ = masterHdr;
+    (void)y;
 
-    for (uint8_t r = 0; r < SlaveInventory::kMaxRelays; ++r) {
-        snprintf(tag, sizeof(tag), "R%d", static_cast<int>(r + 1));
-        lv_obj_t *row = UiKit::makeHubMenuRow(
-            list, tag, "", onPickMaster, reinterpret_cast<void *>(static_cast<uintptr_t>(r)));
-        lv_obj_set_pos(row, 12, y);
-        masterTitleLbls_[r] = lv_obj_get_child(row, 0);
-        y += step;
-    }
-
-    /* Velo solo sobre sección Atlas (Master local siempre usable). */
+    /* Velo de Atlas offline. Hoy queda oculto. */
     const lv_coord_t veilTop = AppTheme::MENU_LIST_TOP;
     veil_ = lv_obj_create(root);
     lv_obj_remove_style_all(veil_);
@@ -228,7 +210,9 @@ lv_obj_t *Screens::createRelaysHub(lv_obj_t *parent) {
     lv_obj_align(veilHint_, LV_ALIGN_CENTER, 0, 0);
 
     applyAtlasVeil();
+    syncRelaysHubRows();
     MasterLink::requestSlaves();
+    MasterLink::requestRules();
     return root;
 }
 

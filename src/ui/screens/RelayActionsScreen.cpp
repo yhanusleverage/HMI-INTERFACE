@@ -1,5 +1,6 @@
 #include "Screens.h"
 #include "NavShell.h"
+#include "MasterLink.h"
 #include "RelayAliasConfig.h"
 #include "AppStrings.h"
 #include "theme/AppTheme.h"
@@ -21,6 +22,11 @@ void onActuation(lv_event_t *) { NavShell::goToAtlasScreen(ScreenId::RelayActuat
 void formatHeader(char *buf, size_t n) {
     const char *mac = NavShell::currentAtlasMac();
     const uint8_t r = NavShell::currentAtlasRelay();
+    const char *web = MasterLink::relayDisplayName(mac, r);
+    if (web && web[0]) {
+        snprintf(buf, n, "%s", web);
+        return;
+    }
     const char *alias = RelayAliasConfig::getName(mac, r);
     if (alias && alias[0]) {
         snprintf(buf, n, "%s", alias);

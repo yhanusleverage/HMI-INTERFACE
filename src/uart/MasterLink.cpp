@@ -2,6 +2,7 @@
 #include "BoardPins.h"
 #include "DataStore.h"
 #include "MasterWifiDraft.h"
+#include "WifiConfig.h"
 #include "NutrientConfig.h"
 #include "PumpConfig.h"
 #include "DoseChannel.h"
@@ -28,6 +29,9 @@ static bool processBridgeOk_ = false;
 static uint8_t lastProcessAckState_ = 0;
 static bool masterWifiConnectedFlag = false;
 static bool masterHasWifiFlag = false;
+/** Una vez por arranque: no repetir wifi_config si el master reinicia. */
+static bool wifiOfferDone_ = false;
+static unsigned long lastSysInfoAskMs_ = 0;
 static char masterSsidBuf[33] = {};
 static char masterDeviceNameBuf[32] = {};
 static char masterLocationBuf[32] = {};
@@ -141,6 +145,220 @@ void MasterLink::begin() {
 #if UART_LINK_DEBUG
     Serial.println("[UART DBG] cable: HMI TX(17)->Master RX(17), Master TX(18)->HMI RX(18), GND");
 #endif
+}
+
+struct NameSlot {
+    bool used;
+    char mac[18];
+    char place[40];
+    char names[8][32];
+};
+
+static MasterLink::RuleView ruleLive_[8];
+static MasterLink::RuleView ruleStage_[8];
+static uint8_t ruleLiveCount_ = 0;
+static uint8_t ruleStageCount_ = 0;
+static bool ruleOpen_ = false;
+static uint32_t ruleGen_ = 0;
+
+static NameSlot nameLive_[4];
+static NameSlot nameStage_[4];
+static uint8_t nameLiveCount_ = 0;
+static uint8_t nameStageCount_ = 0;
+static bool nameOpen_ = false;
+static uint32_t nameGen_ = 0;
+
+static void copyField(char *dst, size_t n, const char *src) {
+    if (!dst || n == 0) {
+        return;
+    }
+    if (!src) {
+        dst[0] = '\0';
+        return;
+    }
+    strncpy(dst, src, n - 1);
+    dst[n - 1] = '\0';
+}
+
+static bool macEq(const char *a, const char *b) {
+    if (!a || !b) {
+        return false;
+    }
+    while (*a && *b) {
+        char ca = *a;
+        char cb = *b;
+        if (ca >= 'a' && ca <= 'z') {
+            ca = static_cast<char>(ca - 32);
+        }
+        if (cb >= 'a' && cb <= 'z') {
+            cb = static_cast<char>(cb - 32);
+        }
+        if (ca != cb) {
+            return false;
+        }
+        ++a;
+        ++b;
+    }
+    return *a == *b;
+}
+
+static void onRelayNamesBegin() {
+    nameOpen_ = true;
+    nameStageCount_ = 0;
+    memset(nameStage_, 0, sizeof(nameStage_));
+}
+
+static void onRelayNames(JsonDocument &doc) {
+    if (!nameOpen_ || nameStageCount_ >= 4) {
+        return;
+    }
+    NameSlot &slot = nameStage_[nameStageCount_];
+    memset(&slot, 0, sizeof(slot));
+    slot.used = true;
+    copyField(slot.mac, sizeof(slot.mac), doc["mac"] | "");
+    copyField(slot.place, sizeof(slot.place), doc["place"] | "");
+    JsonArray names = doc["names"].as<JsonArray>();
+    uint8_t i = 0;
+    if (names.isNull()) {
+        ++nameStageCount_;
+        return;
+    }
+    for (JsonVariant item : names) {
+        if (i >= 8) {
+            break;
+        }
+        if (item.is<const char *>()) {
+            copyField(slot.names[i], sizeof(slot.names[i]), item.as<const char *>());
+        }
+        ++i;
+    }
+    ++nameStageCount_;
+}
+
+static void onRelayNamesEnd() {
+    nameOpen_ = false;
+    const bool same = nameStageCount_ == nameLiveCount_ &&
+                      memcmp(nameStage_, nameLive_, sizeof(nameLive_)) == 0;
+    if (same) {
+        return;
+    }
+    memcpy(nameLive_, nameStage_, sizeof(nameLive_));
+    nameLiveCount_ = nameStageCount_;
+    ++nameGen_;
+}
+
+static void onRulesBegin() {
+    ruleOpen_ = true;
+    ruleStageCount_ = 0;
+    memset(ruleStage_, 0, sizeof(ruleStage_));
+}
+
+static bool parseRuleEnabled(JsonDocument &doc) {
+    JsonVariantConst v = doc["enabled"];
+    if (v.isNull()) {
+        v = doc["active"];
+    }
+    if (v.isNull()) {
+        return false;
+    }
+    if (v.is<bool>()) {
+        return v.as<bool>();
+    }
+    if (v.is<const char *>()) {
+        const char *s = v.as<const char *>();
+        return s && (s[0] == '1' || s[0] == 't' || s[0] == 'T' || s[0] == 'y' || s[0] == 'Y');
+    }
+    return v.as<int>() != 0;
+}
+
+static void fillRuleView(JsonDocument &doc, MasterLink::RuleView &view) {
+    memset(&view, 0, sizeof(view));
+    view.used = true;
+    view.enabled = parseRuleEnabled(doc);
+    copyField(view.id, sizeof(view.id), doc["id"] | "");
+    copyField(view.name, sizeof(view.name), doc["name"] | "");
+    copyField(view.level, sizeof(view.level), doc["level"] | "");
+    for (uint8_t i = 0; i < 4; ++i) {
+        view.relays[i] = -1;
+    }
+    JsonArray steps = doc["steps"].as<JsonArray>();
+    uint8_t n = 0;
+    if (!steps.isNull()) {
+        for (JsonVariant step : steps) {
+            if (n >= 4) {
+                break;
+            }
+            if (step.is<const char *>()) {
+                copyField(view.steps[n], sizeof(view.steps[n]), step.as<const char *>());
+                ++n;
+            }
+        }
+    }
+    view.stepCount = n;
+    JsonArray relays = doc["relays"].as<JsonArray>();
+    uint8_t r = 0;
+    if (!relays.isNull()) {
+        for (JsonObject slot : relays) {
+            if (r >= 4) {
+                break;
+            }
+            view.relays[r] = slot["r"] | -1;
+            copyField(view.macs[r], sizeof(view.macs[r]), slot["mac"] | "");
+            copyField(view.untils[r], sizeof(view.untils[r]), slot["until"] | "");
+            ++r;
+        }
+    }
+}
+
+static void applyLiveRule(JsonDocument &doc) {
+    MasterLink::RuleView incoming;
+    fillRuleView(doc, incoming);
+    if (!incoming.id[0]) {
+        return;
+    }
+    for (uint8_t i = 0; i < ruleLiveCount_; ++i) {
+        if (strcmp(ruleLive_[i].id, incoming.id) == 0) {
+            ruleLive_[i] = incoming;
+            ++ruleGen_;
+            return;
+        }
+    }
+    if (ruleLiveCount_ >= 8) {
+        return;
+    }
+    ruleLive_[ruleLiveCount_++] = incoming;
+    ++ruleGen_;
+}
+
+static void onRule(JsonDocument &doc) {
+    if (ruleOpen_) {
+        if (ruleStageCount_ >= 8) {
+            return;
+        }
+        fillRuleView(doc, ruleStage_[ruleStageCount_]);
+        ++ruleStageCount_;
+        return;
+    }
+    /* Master puede empujar un rule suelto al auto-desactivar tras ejecutar. */
+    applyLiveRule(doc);
+}
+
+static void onRulesEnd() {
+    ruleOpen_ = false;
+    bool changed = (ruleLiveCount_ != ruleStageCount_);
+    if (!changed) {
+        for (uint8_t i = 0; i < ruleStageCount_; ++i) {
+            if (memcmp(&ruleLive_[i], &ruleStage_[i], sizeof(ruleLive_[i])) != 0) {
+                changed = true;
+                break;
+            }
+        }
+    }
+    memcpy(ruleLive_, ruleStage_, sizeof(ruleLive_));
+    ruleLiveCount_ = ruleStageCount_;
+    if (changed) {
+        ++ruleGen_;
+    }
 }
 
 static void handleLine(const char *line) {
@@ -293,6 +511,36 @@ static void handleLine(const char *line) {
         markLinkAlive();
         return;
     }
+    if (strcmp(t, "relay_names_begin") == 0) {
+        onRelayNamesBegin();
+        markLinkAlive();
+        return;
+    }
+    if (strcmp(t, "relay_names") == 0) {
+        onRelayNames(doc);
+        markLinkAlive();
+        return;
+    }
+    if (strcmp(t, "relay_names_end") == 0) {
+        onRelayNamesEnd();
+        markLinkAlive();
+        return;
+    }
+    if (strcmp(t, "rules_begin") == 0) {
+        onRulesBegin();
+        markLinkAlive();
+        return;
+    }
+    if (strcmp(t, "rule") == 0) {
+        onRule(doc);
+        markLinkAlive();
+        return;
+    }
+    if (strcmp(t, "rules_end") == 0) {
+        onRulesEnd();
+        markLinkAlive();
+        return;
+    }
     if (strcmp(t, "telemetry") != 0) {
         return;
     }
@@ -340,6 +588,47 @@ static void maybeLogUartDebug(unsigned long nowMs) {
 #endif
 }
 
+/** Master sin NVS y HMI ya asociado: manda la clave probada, una vez. */
+static void offerSavedWifiIfMasterEmpty() {
+#if UART_BENCH
+    return;
+#else
+    if (wifiOfferDone_) {
+        return;
+    }
+    if (!WifiConfig::configured()) {
+        wifiOfferDone_ = true;
+        return;
+    }
+    if (!masterSysInfoValidFlag) {
+        const unsigned long now = millis();
+        if (lastSysInfoAskMs_ == 0 || (now - lastSysInfoAskMs_) >= 2000UL) {
+            lastSysInfoAskMs_ = now;
+            MasterLink::requestSysInfo();
+        }
+        return;
+    }
+    if (masterHasWifiFlag) {
+        wifiOfferDone_ = true;
+        return;
+    }
+    if (WifiConfig::linkState() != 2) {
+        return;
+    }
+    char ssid[WifiConfig::SSID_MAX];
+    char pass[WifiConfig::PASS_MAX];
+    WifiConfig::getSsid(ssid, sizeof(ssid));
+    WifiConfig::getPass(pass, sizeof(pass));
+    if (ssid[0] == '\0') {
+        wifiOfferDone_ = true;
+        return;
+    }
+    wifiOfferDone_ = true;
+    Serial.printf("[WIFI] master sin red — enviando clave ya conectada ssid=%s\n", ssid);
+    MasterLink::sendWifiConfig(ssid, pass);
+#endif
+}
+
 void MasterLink::loop() {
     while (MasterSerial.available() > 0) {
         const char c = static_cast<char>(MasterSerial.read());
@@ -383,6 +672,8 @@ void MasterLink::loop() {
         processBridgeOk_ = false;
         DataStore::instance().setLinkOk(false);
     }
+
+    offerSavedWifiIfMasterEmpty();
 }
 
 void MasterLink::sendSetpoint(const char *paramKey, float value) {
@@ -620,4 +911,165 @@ void MasterLink::flush() { MasterSerial.flush(); }
 void MasterLink::clearLastCmdAck() {
     lastCmdAckState_ = 0;
     lastCmdActionBuf[0] = '\0';
+}
+
+void MasterLink::requestRules() {
+    JsonDocument doc;
+    doc["t"] = "cmd";
+    doc["action"] = "rules_req";
+    emitJson(doc);
+}
+
+void MasterLink::sendRuleSet(const char *ruleId, bool enabled) {
+    if (!ruleId || !ruleId[0]) {
+        return;
+    }
+    JsonDocument doc;
+    doc["t"] = "cmd";
+    doc["action"] = "rule_set";
+    doc["id"] = ruleId;
+    doc["enabled"] = enabled ? 1 : 0;
+    emitJson(doc);
+}
+
+void MasterLink::sendRuleDelete(const char *ruleId) {
+    if (!ruleId || !ruleId[0]) {
+        return;
+    }
+    JsonDocument doc;
+    doc["t"] = "cmd";
+    doc["action"] = "rule_delete";
+    doc["id"] = ruleId;
+    emitJson(doc);
+}
+
+void MasterLink::sendRelayRename(const char *mac, uint8_t relay, const char *name) {
+    if (!mac || !mac[0] || relay > 7) {
+        return;
+    }
+    JsonDocument doc;
+    doc["t"] = "cmd";
+    doc["action"] = "relay_rename";
+    doc["mac"] = mac;
+    doc["relay"] = relay;
+    doc["name"] = name ? name : "";
+    emitJson(doc);
+}
+
+void MasterLink::setRelayDisplayName(const char *mac, uint8_t relay, const char *name) {
+    if (!mac || !mac[0] || relay >= 8) {
+        return;
+    }
+    for (uint8_t i = 0; i < nameLiveCount_; ++i) {
+        if (!nameLive_[i].used || !macEq(nameLive_[i].mac, mac)) {
+            continue;
+        }
+        copyField(nameLive_[i].names[relay], sizeof(nameLive_[i].names[relay]), name ? name : "");
+        ++nameGen_;
+        return;
+    }
+}
+
+void MasterLink::sendRuleCreate(const char *name, const char *mac, uint8_t relay, const char *until,
+                                int relay2, const char *until2, const char *id) {
+    JsonDocument doc;
+    doc["t"] = "cmd";
+    doc["action"] = "rule_create";
+    doc["name"] = name ? name : "";
+    doc["mac"] = mac ? mac : "";
+    doc["relay"] = relay;
+    doc["until"] = until ? until : "";
+    if (relay2 >= 0 && until2 && until2[0]) {
+        doc["relay2"] = relay2;
+        doc["until2"] = until2;
+    }
+    if (id && id[0]) {
+        doc["id"] = id;
+    }
+    emitJson(doc);
+}
+
+uint8_t MasterLink::ruleViewCount() { return ruleLiveCount_; }
+
+const MasterLink::RuleView *MasterLink::ruleViewAt(uint8_t index) {
+    if (index >= ruleLiveCount_ || !ruleLive_[index].used) {
+        return nullptr;
+    }
+    return &ruleLive_[index];
+}
+
+uint32_t MasterLink::ruleViewGeneration() { return ruleGen_; }
+
+void MasterLink::setRuleViewEnabled(uint8_t index, bool enabled) {
+    if (index >= ruleLiveCount_) {
+        return;
+    }
+    if (ruleLive_[index].enabled == enabled) {
+        return;
+    }
+    ruleLive_[index].enabled = enabled;
+    ++ruleGen_;
+}
+
+void MasterLink::dropRuleView(uint8_t index) {
+    if (index >= ruleLiveCount_) {
+        return;
+    }
+    for (uint8_t i = index; i + 1 < ruleLiveCount_; ++i) {
+        ruleLive_[i] = ruleLive_[i + 1];
+    }
+    --ruleLiveCount_;
+    memset(&ruleLive_[ruleLiveCount_], 0, sizeof(ruleLive_[0]));
+    ++ruleGen_;
+}
+
+uint32_t MasterLink::relayCatalogGeneration() { return nameGen_; }
+
+uint8_t MasterLink::relayCatalogCount() { return nameLiveCount_; }
+
+const char *MasterLink::relayCatalogMac(uint8_t slot) {
+    if (slot >= nameLiveCount_ || !nameLive_[slot].used) {
+        return "";
+    }
+    return nameLive_[slot].mac;
+}
+
+const char *MasterLink::relayCatalogName(uint8_t slot, uint8_t relay) {
+    if (slot >= nameLiveCount_ || relay >= 8) {
+        return "";
+    }
+    return nameLive_[slot].names[relay];
+}
+
+const char *MasterLink::relayCatalogPlace(const char *mac) {
+    if (mac && mac[0]) {
+        for (uint8_t i = 0; i < nameLiveCount_; ++i) {
+            if (nameLive_[i].used && macEq(nameLive_[i].mac, mac)) {
+                return nameLive_[i].place;
+            }
+        }
+        return "";
+    }
+    if (nameLiveCount_ > 0) {
+        return nameLive_[0].place;
+    }
+    return "";
+}
+
+const char *MasterLink::relayDisplayName(const char *mac, uint8_t relay) {
+    if (relay >= 8) {
+        return "";
+    }
+    if (mac && mac[0]) {
+        for (uint8_t i = 0; i < nameLiveCount_; ++i) {
+            if (nameLive_[i].used && macEq(nameLive_[i].mac, mac)) {
+                return nameLive_[i].names[relay];
+            }
+        }
+        return "";
+    }
+    if (nameLiveCount_ > 0) {
+        return nameLive_[0].names[relay];
+    }
+    return "";
 }

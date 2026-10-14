@@ -1,5 +1,6 @@
 #include "Screens.h"
 #include "NavShell.h"
+#include "MasterLink.h"
 #include "RelayAliasConfig.h"
 #include "AppStrings.h"
 #include "theme/AppTheme.h"
@@ -16,7 +17,7 @@ namespace {
 lv_obj_t *nameTa = nullptr;
 lv_obj_t *kb = nullptr;
 lv_obj_t *statusLbl = nullptr;
-char draft_[RELAY_ALIAS_NAME_LEN] = {};
+char draft_[32] = {};
 
 void setStatus(UiKit::PumpUiStatus st, const char *msg) {
     UiKit::setPumpStatus(statusLbl, st, msg);
@@ -33,12 +34,21 @@ void onBack(lv_event_t *) {
     NavShell::back();
 }
 
+void commitName() {
+    if (nameTa) {
+        strncpy(draft_, lv_textarea_get_text(nameTa), sizeof(draft_) - 1);
+        draft_[sizeof(draft_) - 1] = '\0';
+    }
+    const char *mac = NavShell::currentAtlasMac();
+    const uint8_t relay = NavShell::currentAtlasRelay();
+    MasterLink::setRelayDisplayName(mac, relay, draft_);
+    MasterLink::sendRelayRename(mac, relay, draft_);
+}
+
 void onKbDone(lv_event_t *e) {
     const lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_READY && nameTa) {
-        strncpy(draft_, lv_textarea_get_text(nameTa), RELAY_ALIAS_NAME_LEN - 1);
-        draft_[RELAY_ALIAS_NAME_LEN - 1] = '\0';
-        RelayAliasConfig::setName(NavShell::currentAtlasMac(), NavShell::currentAtlasRelay(), draft_);
+        commitName();
         hideKb();
         NavShell::back();
         return;
@@ -57,11 +67,7 @@ void onNameFocus(lv_event_t *) {
 }
 
 void onSave(lv_event_t *) {
-    if (nameTa) {
-        strncpy(draft_, lv_textarea_get_text(nameTa), RELAY_ALIAS_NAME_LEN - 1);
-        draft_[RELAY_ALIAS_NAME_LEN - 1] = '\0';
-    }
-    RelayAliasConfig::setName(NavShell::currentAtlasMac(), NavShell::currentAtlasRelay(), draft_);
+    commitName();
     hideKb();
     NavShell::back();
 }
@@ -74,10 +80,14 @@ lv_obj_t *Screens::createRelayName(lv_obj_t *parent) {
     statusLbl = nullptr;
     memset(draft_, 0, sizeof(draft_));
 
+    const char *web = MasterLink::relayDisplayName(NavShell::currentAtlasMac(),
+                                                   NavShell::currentAtlasRelay());
     const char *cur =
         RelayAliasConfig::getName(NavShell::currentAtlasMac(), NavShell::currentAtlasRelay());
-    if (cur && cur[0]) {
-        strncpy(draft_, cur, RELAY_ALIAS_NAME_LEN - 1);
+    if (web && web[0]) {
+        strncpy(draft_, web, sizeof(draft_) - 1);
+    } else if (cur && cur[0]) {
+        strncpy(draft_, cur, sizeof(draft_) - 1);
     } else {
         snprintf(draft_, sizeof(draft_), Strings::tr(Msg::AtlasRelayFmt),
                  static_cast<int>(NavShell::currentAtlasRelay() + 1));
@@ -102,7 +112,7 @@ lv_obj_t *Screens::createRelayName(lv_obj_t *parent) {
 
     nameTa = lv_textarea_create(root);
     lv_textarea_set_one_line(nameTa, true);
-    lv_textarea_set_max_length(nameTa, RELAY_ALIAS_NAME_LEN - 1);
+    lv_textarea_set_max_length(nameTa, sizeof(draft_) - 1);
     lv_textarea_set_text(nameTa, draft_);
     lv_obj_set_size(nameTa, LCD_H_RES - 24, AppTheme::TOUCH_MIN_H + 8);
     lv_obj_set_pos(nameTa, 12, y);

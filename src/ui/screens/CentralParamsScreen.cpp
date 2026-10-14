@@ -75,7 +75,7 @@ void styleTempHeader(lv_obj_t *val, lv_obj_t *unit) {
     if (unit) {
         lv_obj_set_style_text_color(unit, AppTheme::text(), LV_PART_MAIN);
         lv_obj_set_style_text_opa(unit, LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_set_style_text_font(unit, &lv_font_montserrat_20, LV_PART_MAIN);
+        lv_obj_set_style_text_font(unit, &lv_font_montserrat_28, LV_PART_MAIN);
     }
 }
 
