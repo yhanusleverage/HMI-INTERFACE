@@ -17,6 +17,11 @@ void sendPumpFlowCalib(const char *channel, float flowMlPerMin, float measuredMl
 void sendNutrientProportions();
 /** Params malha fechada (volumen, pulsos, auto EC/pH). */
 void sendLoopControl();
+/** normal | carrera. Mismo interruptor que la web. */
+void sendLevelInterlock(const char *mode);
+/** Ultimo modo visto por telemetria o confirmado por cmd_ack. */
+const char *levelInterlockMode();
+void rememberLevelInterlock(const char *mode);
 /** Pide inventory local + slaves ESP-NOW. */
 void requestSlaves();
 /** Pide device_id / cloud_ok al Master (solo lectura; registro = Master). */

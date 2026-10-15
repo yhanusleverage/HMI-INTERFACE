@@ -10,6 +10,7 @@ namespace {
 void onBack(lv_event_t *) { NavShell::back(); }
 void onNiveles(lv_event_t *) { NavShell::goTo(ScreenId::Niveles); }
 void onAuto(lv_event_t *) { NavShell::goTo(ScreenId::ControleAuto); }
+void onMode(lv_event_t *) { NavShell::goTo(ScreenId::ControleMode); }
 void onReservoir(lv_event_t *) { NavShell::goTo(ScreenId::Reservoir); }
 
 }  // namespace
@@ -42,6 +43,11 @@ lv_obj_t *Screens::createControle(lv_obj_t *parent) {
     lv_obj_t *r1 = UiKit::makeHubMenuRow(host, Strings::tr(Msg::ControleAuto),
                                         Strings::tr(Msg::ControleAutoHint), onAuto, nullptr);
     lv_obj_set_pos(r1, 12, y);
+    y += step;
+
+    lv_obj_t *rMode = UiKit::makeHubMenuRow(host, Strings::tr(Msg::ControleMode),
+                                           Strings::tr(Msg::ControleModeHint), onMode, nullptr);
+    lv_obj_set_pos(rMode, 12, y);
     y += step;
 
     lv_obj_t *r2 = UiKit::makeHubMenuRow(host, Strings::tr(Msg::ReservoirTitle),

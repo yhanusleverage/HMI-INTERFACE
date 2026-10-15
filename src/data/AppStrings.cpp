@@ -279,6 +279,17 @@ const char *const kEs[] = {
     "Base EC/L --",
     "Base EC/L  %.0f uS",
     "Completa todos los campos",
+    "Modo Auto",
+    "Normal o Carrera",
+    "Normal",
+    "Carrera",
+    "Dosifica con cualquier nivel que no sea vacio.",
+    "Solo dosifica en 4/4, alto.",
+    "en uso",
+    "Si",
+    "No",
+    "El Master rechazo el modo.",
+    "Sin respuesta del Master.",
 };
 
 const char *const kEn[] = {
@@ -557,6 +568,17 @@ const char *const kEn[] = {
     "Base EC/L --",
     "Base EC/L  %.0f uS",
     "Fill in every field",
+    "Auto mode",
+    "Normal or Carrera",
+    "Normal",
+    "Carrera",
+    "Doses at any level that is not empty.",
+    "Doses only at 4/4, high.",
+    "in use",
+    "Yes",
+    "No",
+    "The Master rejected the mode.",
+    "No reply from the Master.",
 };
 
 const char *const kPt[] = {
@@ -835,6 +857,17 @@ const char *const kPt[] = {
     "Base EC/L --",
     "Base EC/L  %.0f uS",
     "Preencha todos os campos",
+    "Modo Auto",
+    "Normal ou Carrera",
+    "Normal",
+    "Carrera",
+    "Dosa em qualquer nivel que nao seja vazio.",
+    "Dosa so em 4/4, alto.",
+    "em uso",
+    "Sim",
+    "Nao",
+    "O Master rejeitou o modo.",
+    "Sem resposta do Master.",
 };
 
 static_assert(sizeof(kEs) / sizeof(kEs[0]) == static_cast<size_t>(Msg::Count), "ES table size");

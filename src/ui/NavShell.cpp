@@ -129,6 +129,8 @@ lv_obj_t *build(ScreenId id, ParamId param, DoseChannel dose) {
         return Screens::createControle(contentHost);
     case ScreenId::ControleAuto:
         return Screens::createControleAuto(contentHost);
+    case ScreenId::ControleMode:
+        return Screens::createControleMode(contentHost);
     case ScreenId::Units:
         return Screens::createUnits(contentHost);
     case ScreenId::Reservoir:
@@ -258,6 +260,9 @@ void refreshActive() {
         break;
     case ScreenId::ControleAuto:
         Screens::refreshControleAuto(active);
+        break;
+    case ScreenId::ControleMode:
+        Screens::refreshControleMode(active);
         break;
     case ScreenId::Units:
         Screens::refreshUnits(active);

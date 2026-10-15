@@ -37,6 +37,7 @@ static char masterDeviceNameBuf[32] = {};
 static char masterLocationBuf[32] = {};
 static char lastCmdActionBuf[24] = {};
 static uint8_t lastCmdAckState_ = 0;
+static char ilockMode_[8] = "normal";
 #if UART_LINK_DEBUG
 static uint32_t rxByteCount = 0;
 static uint32_t rxLineCount = 0;
@@ -544,6 +545,10 @@ static void handleLine(const char *line) {
     if (strcmp(t, "telemetry") != 0) {
         return;
     }
+    if (doc.containsKey("ilock")) {
+        const char *im = doc["ilock"] | "";
+        MasterLink::rememberLevelInterlock(im);
+    }
     const float ph = doc["ph"] | NAN;
     const float ec = doc["ec"] | NAN;
     const float temp = doc["temp_agua"] | NAN;
@@ -760,6 +765,28 @@ void MasterLink::sendNutrientProportions() {
             }
         }
     }
+    emitJson(doc);
+}
+
+void MasterLink::rememberLevelInterlock(const char *mode) {
+    if (!mode) {
+        return;
+    }
+    if (strcmp(mode, "carrera") == 0) {
+        strncpy(ilockMode_, "carrera", sizeof(ilockMode_) - 1);
+    } else if (strcmp(mode, "normal") == 0) {
+        strncpy(ilockMode_, "normal", sizeof(ilockMode_) - 1);
+    }
+    ilockMode_[sizeof(ilockMode_) - 1] = '\0';
+}
+
+const char *MasterLink::levelInterlockMode() { return ilockMode_; }
+
+void MasterLink::sendLevelInterlock(const char *mode) {
+    JsonDocument doc;
+    doc["t"] = "cmd";
+    doc["action"] = "level_interlock";
+    doc["mode"] = (mode && strcmp(mode, "carrera") == 0) ? "carrera" : "normal";
     emitJson(doc);
 }
 

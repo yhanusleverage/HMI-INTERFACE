@@ -37,6 +37,7 @@ enum class ScreenId : uint8_t {
     Rules, /* hub visual de reglas de nivel */
     Controle,
     ControleAuto,
+    ControleMode,
     Units,
     Reservoir,
     Backlight,

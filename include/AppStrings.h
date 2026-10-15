@@ -283,6 +283,17 @@ enum class Msg : uint16_t {
     RecipeEcMissing,
     RecipeEcFmt,
     WizardFieldsRequired,
+    ControleMode,
+    ControleModeHint,
+    ModeNormal,
+    ModeCarrera,
+    ModeNormalBody,
+    ModeCarreraBody,
+    ModeInUse,
+    ModeYes,
+    ModeNo,
+    ModeReject,
+    ModeNoReply,
     Count
 };
 

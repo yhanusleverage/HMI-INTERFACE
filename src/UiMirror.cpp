@@ -76,6 +76,8 @@ const char *screenName(ScreenId id) {
         return "CONTROLE";
     case ScreenId::ControleAuto:
         return "CTRL_AUTO";
+    case ScreenId::ControleMode:
+        return "CTRL_MODE";
     case ScreenId::Units:
         return "UNITS";
     case ScreenId::Reservoir:
