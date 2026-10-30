@@ -1,6 +1,7 @@
 #include "Screens.h"
 #include "NavShell.h"
 #include "MasterLink.h"
+#include "NutrientConfig.h"
 #include "PumpConfig.h"
 #include "ReservoirConfig.h"
 #include "AppStrings.h"
@@ -157,6 +158,8 @@ void onCalibApply(lv_event_t *) {
     PumpConfig::applyCalibMeasure(ch_, measuredMl_, CALIB_SEC);
     MasterLink::sendPumpFlowCalib(doseChannelKey(ch_), PumpConfig::flowMlPerMin(ch_), measuredMl_,
                                   CALIB_SEC);
+    /* Reenvía receta con flowRate nuevo → Master/web tabla nutrición. */
+    NutrientConfig::syncToMaster();
     refreshFlowLabel();
     char buf[64];
     snprintf(buf, sizeof(buf), Strings::tr(Msg::PumpCalibDoneFmt), PumpConfig::flowMlPerMin(ch_));
@@ -205,14 +208,32 @@ lv_obj_t *Screens::createPumpCalib(lv_obj_t *parent, DoseChannel channel) {
     lv_coord_t y = 4;
     const lv_coord_t gap = 6;
 
-    flowLbl = lv_label_create(host);
-    lv_obj_set_style_text_color(flowLbl, AppTheme::text(), 0);
-    lv_obj_set_style_text_font(flowLbl, &lv_font_montserrat_16, 0);
-    lv_obj_set_width(flowLbl, LCD_H_RES);
-    lv_obj_set_style_text_align(flowLbl, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(flowLbl, 0, y);
+    lv_obj_t *flowRow = lv_obj_create(host);
+    lv_obj_remove_style_all(flowRow);
+    lv_obj_set_size(flowRow, LCD_H_RES - 16, 36);
+    lv_obj_set_pos(flowRow, 8, y);
+    lv_obj_set_style_bg_opa(flowRow, LV_OPA_TRANSP, 0);
+    lv_obj_clear_flag(flowRow, LV_OBJ_FLAG_SCROLLABLE);
+
+    char pumpName[40];
+    PumpConfig::formatTitle(channel, pumpName, sizeof(pumpName));
+    lv_obj_t *nameLbl = lv_label_create(flowRow);
+    lv_label_set_text(nameLbl, pumpName);
+    lv_obj_set_style_text_color(nameLbl, AppTheme::text(), 0);
+    lv_obj_set_style_text_font(nameLbl, &lv_font_montserrat_20, 0);
+    lv_obj_set_width(nameLbl, 200);
+    lv_label_set_long_mode(nameLbl, LV_LABEL_LONG_CLIP);
+    lv_obj_align(nameLbl, LV_ALIGN_LEFT_MID, 4, 0);
+
+    flowLbl = lv_label_create(flowRow);
+    lv_obj_set_style_text_color(flowLbl, AppTheme::accentText(), 0);
+    lv_obj_set_style_text_font(flowLbl, &lv_font_montserrat_20, 0);
+    lv_obj_set_width(flowLbl, 240);
+    lv_obj_set_style_text_align(flowLbl, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_label_set_long_mode(flowLbl, LV_LABEL_LONG_CLIP);
+    lv_obj_align(flowLbl, LV_ALIGN_RIGHT_MID, -4, 0);
     refreshFlowLabel();
-    y += 28;
+    y += 40;
 
     lv_obj_t *calibRun = UiKit::makePrimaryButton(host, Strings::tr(Msg::PumpCalibRun), onCalibRun);
     lv_obj_set_size(calibRun, LCD_H_RES - 16, AppTheme::BTN_PRIMARY_H);

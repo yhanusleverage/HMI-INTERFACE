@@ -146,13 +146,14 @@ void setup() {
     RelayActuationLock::begin();
     RelayCycleConfig::begin();
     WifiConfig::begin();
-#if !UART_BENCH
+    /* Credenciales NVS: conectar al boot (no esperar hub Sistema). */
     if (WifiConfig::configured()) {
         WifiConfig::connectSaved();
     }
+#if !UART_BENCH
     Simulator::begin();
 #else
-    Serial.println("[UART BENCH] HMI — solo MasterLink + UI + logs RX/TX (sin WiFi/SIM)");
+    Serial.println("[UART BENCH] HMI — MasterLink + UI + WiFi STA (sin SIM)");
 #endif
     MasterLink::begin();
     NutrientConfig::syncToMaster();
@@ -175,10 +176,8 @@ void loop() {
 #endif
     MasterLink::loop();
     RelayCycleConfig::tick();
-#if !UART_BENCH
     // RulesEngine::tick(); /* desactivado — Rules fuera del HMI */
     WifiConfig::loop();
-#endif
     Screens::tickBootReady();
     if (DisplayHal::ready()) {
         NavShell::tick();

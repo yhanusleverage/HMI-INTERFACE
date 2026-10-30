@@ -5,6 +5,7 @@
 #include "MasterLink.h"
 #include "Config.h"
 #include <Preferences.h>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -58,26 +59,6 @@ void clearPumpLabelIfNoNutrient(uint8_t relayNumber) {
         return;
     }
     PumpConfig::setLabelLocal(doseFromRelayNumber(relayNumber), "");
-}
-
-/** Nutriente → Manual: si es el único en esa bomba, copia el nombre a PumpConfig. */
-void mirrorNameToPumpIfSole(size_t ix) {
-    if (ix >= count_ || items_[ix].name[0] == '\0') {
-        return;
-    }
-    const uint8_t r = items_[ix].relayNumber;
-    if (r < 1 || r > PUMP_RELAY_COUNT) {
-        return;
-    }
-    size_t hits = 0;
-    for (size_t i = 0; i < count_; ++i) {
-        if (items_[i].relayNumber == r) {
-            ++hits;
-        }
-    }
-    if (hits == 1) {
-        PumpConfig::setLabelLocal(doseFromRelayNumber(r), items_[ix].name);
-    }
 }
 
 void persistAndSync() {
@@ -146,10 +127,6 @@ void NutrientConfig::load() {
         const float t = phLo_;
         phLo_ = phHi_;
         phHi_ = t;
-    }
-    /* Alinear etiquetas Manual (1:1) tras NVS. PumpConfig::begin() debe ir antes. */
-    for (size_t i = 0; i < count_; ++i) {
-        mirrorNameToPumpIfSole(i);
     }
     /* Dedupe legacy: un nutriente por bomba. */
     bool dirty = false;
@@ -233,9 +210,6 @@ void NutrientConfig::replaceQuantities(const char *const *names, const float *ml
         }
     }
     save();
-    for (size_t i = 0; i < count_; ++i) {
-        mirrorNameToPumpIfSole(i);
-    }
 }
 
 float NutrientConfig::ecLow() { return ecLo_; }
@@ -277,6 +251,33 @@ void NutrientConfig::setPhHigh(float v) {
     }
     save();
     syncBandsToStore();
+}
+
+void NutrientConfig::adoptBand(bool isEc, float lo, float hi) {
+    if (!(hi > lo)) {
+        return;
+    }
+    const float eps = isEc ? 0.5f : 0.01f;
+    if (isEc) {
+        const float nextLo = clampf(lo, 0.0f, 5000.0f);
+        const float nextHi = clampf(hi, 0.0f, 5000.0f);
+        if (fabsf(ecLo_ - nextLo) <= eps && fabsf(ecHi_ - nextHi) <= eps) {
+            return;
+        }
+        ecLo_ = nextLo;
+        ecHi_ = nextHi;
+    } else {
+        const float nextLo = clampf(lo, 0.0f, 14.0f);
+        const float nextHi = clampf(hi, 0.0f, 14.0f);
+        if (fabsf(phLo_ - nextLo) <= eps && fabsf(phHi_ - nextHi) <= eps) {
+            return;
+        }
+        phLo_ = nextLo;
+        phHi_ = nextHi;
+    }
+    save();
+    syncBandsToStore();
+    Serial.printf("[HMI LOOP] banda %s %.2f-%.2f\n", isEc ? "EC" : "pH", lo, hi);
 }
 
 void NutrientConfig::syncBandsToStore() {
@@ -430,27 +431,26 @@ void NutrientConfig::clearPhRelayNutrientConflicts() {
     }
 }
 
-bool NutrientConfig::listAdd(const char *name, float mlPerL) {
-    if (count_ >= NUTRIENT_MAX) {
+bool NutrientConfig::listAdd(const char *name, float mlPerL, uint8_t relayNumber) {
+    if (count_ >= NUTRIENT_MAX || !name || !name[0]) {
         return false;
     }
-    uint8_t freeR = firstFreeRelay();
-    if (freeR == 0) {
-        /* Sin bomba libre (todas con nutriente o pH). */
+    if (relayNumber < 1 || relayNumber > PUMP_RELAY_COUNT) {
+        return false;
+    }
+    if (phUpRelay_ == relayNumber || phDownRelay_ == relayNumber) {
+        return false;
+    }
+    if (relaySharedByNutrient(relayNumber)) {
         return false;
     }
     Item &it = items_[count_];
     memset(it.name, 0, sizeof(it.name));
-    if (name && name[0]) {
-        strncpy(it.name, name, NUTRIENT_NAME_LEN - 1);
-    } else {
-        snprintf(it.name, NUTRIENT_NAME_LEN, "Nut%u", static_cast<unsigned>(count_ + 1));
-    }
+    strncpy(it.name, name, NUTRIENT_NAME_LEN - 1);
     it.mlPerL = clampf(mlPerL, 0.0f, 100.0f);
-    it.relayNumber = freeR;
+    it.relayNumber = relayNumber;
     ++count_;
     persistAndSync();
-    mirrorNameToPumpIfSole(count_ - 1);
     return true;
 }
 
@@ -464,7 +464,6 @@ bool NutrientConfig::listSetName(size_t ix, const char *name) {
         snprintf(items_[ix].name, NUTRIENT_NAME_LEN, "Nut%u", static_cast<unsigned>(ix + 1));
     }
     persistAndSync();
-    mirrorNameToPumpIfSole(ix);
     return true;
 }
 
@@ -491,13 +490,8 @@ bool NutrientConfig::listSetRelayNumber(size_t ix, uint8_t relayNumber) {
     if (relaySharedByNutrient(relayNumber, ix)) {
         return false;
     }
-    const uint8_t oldRelay = items_[ix].relayNumber;
     items_[ix].relayNumber = relayNumber;
     persistAndSync();
-    mirrorNameToPumpIfSole(ix);
-    if (oldRelay != relayNumber) {
-        clearPumpLabelIfNoNutrient(oldRelay);
-    }
     return true;
 }
 
@@ -505,13 +499,11 @@ bool NutrientConfig::listRemove(size_t ix) {
     if (ix >= count_) {
         return false;
     }
-    const uint8_t oldRelay = items_[ix].relayNumber;
     for (size_t i = ix; i + 1 < count_; ++i) {
         items_[i] = items_[i + 1];
     }
     --count_;
     persistAndSync();
-    clearPumpLabelIfNoNutrient(oldRelay);
     return true;
 }
 

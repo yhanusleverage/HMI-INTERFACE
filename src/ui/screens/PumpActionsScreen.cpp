@@ -18,6 +18,7 @@ namespace {
 DoseChannel ch_ = DoseChannel::R1;
 lv_obj_t *headerLbl_ = nullptr;
 lv_obj_t *relayHintLbl_ = nullptr;
+lv_obj_t *calibFlowHint_ = nullptr;
 
 void onBack(lv_event_t *) { NavShell::back(); }
 
@@ -26,9 +27,17 @@ void onPhRelay(lv_event_t *) { NavShell::goToPhRelay(NavShell::phPumpIsUp(ch_));
 void onName(lv_event_t *) { NavShell::goTo(ScreenId::PumpName); }
 void onPrime(lv_event_t *) { NavShell::goTo(ScreenId::PumpPrime); }
 void onCalib(lv_event_t *) { NavShell::goTo(ScreenId::PumpCalib); }
+void onPhGain(lv_event_t *) { NavShell::goTo(ScreenId::PhGain); }
 void onQuick(lv_event_t *) { NavShell::goTo(ScreenId::DosingChannel); }
 void onTime(lv_event_t *) { NavShell::goTo(ScreenId::PumpTimeDose); }
 void onQty(lv_event_t *) { NavShell::goTo(ScreenId::PumpQuantity); }
+
+void styleFlowHint(lv_obj_t *hintLbl) {
+    if (!hintLbl) {
+        return;
+    }
+    UiKit::alignHubValueRight(lv_obj_get_parent(hintLbl));
+}
 
 void syncPumpActionsUi() {
     if (headerLbl_) {
@@ -46,6 +55,12 @@ void syncPumpActionsUi() {
         PumpConfig::formatTitle(ch_, rHint, sizeof(rHint));
         lv_label_set_text(relayHintLbl_, rHint);
     }
+    if (calibFlowHint_) {
+        char flowBuf[24];
+        PumpConfig::formatFlowHint(ch_, flowBuf, sizeof(flowBuf));
+        lv_label_set_text(calibFlowHint_, flowBuf);
+        styleFlowHint(calibFlowHint_);
+    }
 }
 
 }  // namespace
@@ -54,6 +69,7 @@ lv_obj_t *Screens::createPumpActions(lv_obj_t *parent, DoseChannel channel) {
     ch_ = channel;
     headerLbl_ = nullptr;
     relayHintLbl_ = nullptr;
+    calibFlowHint_ = nullptr;
 
     char title[40];
     if (NavShell::isPhPumpChannel(channel)) {
@@ -94,24 +110,38 @@ lv_obj_t *Screens::createPumpActions(lv_obj_t *parent, DoseChannel channel) {
         y += step;
     }
 
+    char flowBuf[24];
+    PumpConfig::formatFlowHint(channel, flowBuf, sizeof(flowBuf));
+
     struct Row {
         Msg title;
-        Msg hint;
+        const char *hint;
         lv_event_cb_t cb;
+        bool isCalib;
     };
     const Row rows[] = {
-        {Msg::PumpActionName, Msg::PumpNameHint, onName},
-        {Msg::PumpActionPrime, Msg::PumpPrimeHint, onPrime},
-        {Msg::PumpActionCalib, Msg::PumpActionCalibHint, onCalib},
-        {Msg::PumpActionQuick, Msg::PumpActionQuickHint, onQuick},
-        {Msg::PumpActionTime, Msg::PumpActionTimeHint, onTime},
-        {Msg::PumpActionQuantity, Msg::PumpQuantityHint, onQty},
+        {Msg::PumpActionName, Strings::tr(Msg::PumpNameHint), onName, false},
+        {Msg::PumpActionPrime, Strings::tr(Msg::PumpPrimeHint), onPrime, false},
+        {Msg::PumpActionCalib, flowBuf, onCalib, true},
+        {Msg::PumpActionQuick, Strings::tr(Msg::PumpActionQuickHint), onQuick, false},
+        {Msg::PumpActionTime, Strings::tr(Msg::PumpActionTimeHint), onTime, false},
+        {Msg::PumpActionQuantity, Strings::tr(Msg::PumpQuantityHint), onQty, false},
     };
     for (const Row &r : rows) {
-        lv_obj_t *row = UiKit::makeHubMenuRow(list, Strings::tr(r.title), Strings::tr(r.hint), r.cb,
-                                              nullptr);
+        lv_obj_t *row = UiKit::makeHubMenuRow(list, Strings::tr(r.title), r.hint, r.cb, nullptr);
         lv_obj_set_pos(row, 12, y);
-        y += step;
+        if (r.isCalib) {
+            lv_obj_set_height(row, AppTheme::MENU_ROW_H);
+            calibFlowHint_ = lv_obj_get_child(row, 1);
+            styleFlowHint(calibFlowHint_);
+        }
+        y += r.isCalib ? (AppTheme::MENU_ROW_H + 4) : step;
+        if (r.title == Msg::PumpActionCalib && NavShell::isPhPumpChannel(channel)) {
+            lv_obj_t *gain = UiKit::makeHubMenuRow(list, Strings::tr(Msg::PhGainTitle),
+                                                   Strings::tr(Msg::PhGainMenuHint), onPhGain, nullptr);
+            lv_obj_set_pos(gain, 12, y);
+            y += step;
+        }
     }
 
     return root;

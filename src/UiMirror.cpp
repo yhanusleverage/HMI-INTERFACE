@@ -48,6 +48,8 @@ const char *screenName(ScreenId id) {
         return "BOMBA PRIME";
     case ScreenId::PumpCalib:
         return "BOMBA CALIB";
+    case ScreenId::PhGain:
+        return "GANHO DPH";
     case ScreenId::PumpTimeDose:
         return "TIME DOSE";
     case ScreenId::PumpQuantity:
@@ -98,6 +100,10 @@ const char *screenName(ScreenId id) {
         return "MASTER WIFI";
     case ScreenId::MasterWifiProfile:
         return "DEVICE PROFILE";
+    case ScreenId::ArmSlot:
+        return "BANDERA";
+    case ScreenId::Urgent:
+        return "URGENTE";
     }
     return "?";
 }
@@ -139,7 +145,8 @@ void UiMirror::dump() {
     }
     if (scr == ScreenId::DosingChannel || scr == ScreenId::PumpActions ||
         scr == ScreenId::PumpName || scr == ScreenId::PumpPrime || scr == ScreenId::PumpCalib ||
-        scr == ScreenId::PumpTimeDose || scr == ScreenId::PumpQuantity) {
+        scr == ScreenId::PumpTimeDose || scr == ScreenId::PumpQuantity ||
+        scr == ScreenId::PhGain) {
         Serial.printf("| Foco dose: %s\n", doseChannelLabel(NavShell::currentDose()));
     }
     Serial.printf("| Fuente: %-4s   UART link: %s\n",

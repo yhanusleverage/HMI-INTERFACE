@@ -66,6 +66,9 @@ lv_obj_t *listHost_ = nullptr;
 lv_obj_t *explainHost_ = nullptr;
 lv_obj_t *editHost_ = nullptr;
 lv_obj_t *nameTa_ = nullptr;
+lv_obj_t *editBar_ = nullptr;
+lv_obj_t *editTitle_ = nullptr;
+lv_obj_t *editTa_ = nullptr;
 lv_obj_t *kb_ = nullptr;
 lv_obj_t *errLbl_ = nullptr;
 lv_obj_t *saveBtn_ = nullptr;
@@ -313,9 +316,7 @@ void closeMenu() {
 }
 
 void hideKb() {
-    if (kb_) {
-        lv_obj_add_flag(kb_, LV_OBJ_FLAG_HIDDEN);
-    }
+    UiKit::hideKbPreview(editBar_, kb_);
     if (nameTa_) {
         lv_obj_clear_state(nameTa_, LV_STATE_FOCUSED);
     }
@@ -502,15 +503,20 @@ void onIgnore(lv_event_t *) {}
 
 void onNameFocus(lv_event_t *) {
     closeMenu();
-    if (!kb_ || !nameTa_) {
+    if (!kb_ || !nameTa_ || !editBar_ || !editTa_) {
         return;
     }
-    lv_keyboard_set_textarea(kb_, nameTa_);
-    lv_obj_clear_flag(kb_, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(kb_);
+    const char *cur = lv_textarea_get_text(nameTa_);
+    UiKit::showKbPreview(editBar_, kb_, editTa_, editTitle_, "Nombre", cur ? cur : "", false,
+                         kNameLen - 1, nullptr);
 }
 
-void onKbDone(lv_event_t *) { hideKb(); }
+void onKbDone(lv_event_t *e) {
+    if (lv_event_get_code(e) == LV_EVENT_READY && editTa_ && nameTa_) {
+        lv_textarea_set_text(nameTa_, lv_textarea_get_text(editTa_));
+    }
+    hideKb();
+}
 
 void onPickLevel(lv_event_t *e) {
     const uintptr_t raw = reinterpret_cast<uintptr_t>(lv_event_get_user_data(e));
@@ -615,6 +621,10 @@ uint8_t waitCmd(const char *action, uint32_t timeoutMs) {
 }
 
 void onSave(lv_event_t *) {
+    if (editBar_ && editTa_ && !lv_obj_has_flag(editBar_, LV_OBJ_FLAG_HIDDEN) && nameTa_) {
+        lv_textarea_set_text(nameTa_, lv_textarea_get_text(editTa_));
+        hideKb();
+    }
     char name[kNameLen];
     copyName(name, sizeof(name), nameTa_ ? lv_textarea_get_text(nameTa_) : "");
     if (name[0] == '\0') {
@@ -1139,6 +1149,9 @@ lv_obj_t *Screens::createRulesHub(lv_obj_t *parent) {
     mode_ = Mode::List;
     explainIx_ = -1;
     editIx_ = -1;
+    editBar_ = editTitle_ = editTa_ = nullptr;
+    nameTa_ = nullptr;
+    kb_ = nullptr;
 
     lv_obj_t *root = lv_obj_create(parent);
     root_ = root;
@@ -1206,6 +1219,7 @@ lv_obj_t *Screens::createRulesHub(lv_obj_t *parent) {
     lv_obj_set_style_border_width(nameTa_, 1, 0);
     lv_obj_set_style_radius(nameTa_, 0, 0);
     lv_obj_add_event_cb(nameTa_, onNameFocus, LV_EVENT_FOCUSED, nullptr);
+    lv_obj_add_event_cb(nameTa_, onNameFocus, LV_EVENT_CLICKED, nullptr);
     y += AppTheme::TOUCH_MIN_H + 12;
 
     y += placeStepFields(editHost_, y, 0);
@@ -1244,6 +1258,7 @@ lv_obj_t *Screens::createRulesHub(lv_obj_t *parent) {
     saveBtn_ = UiKit::makePrimaryButton(editHost_, "Guardar", onSave);
     placeSave();
 
+    editBar_ = UiKit::makeKbPreviewBar(root, &editTitle_, &editTa_);
     kb_ = lv_keyboard_create(root);
     UiKit::styleDarkKeyboard(kb_);
     lv_obj_add_event_cb(kb_, onKbDone, LV_EVENT_READY, nullptr);

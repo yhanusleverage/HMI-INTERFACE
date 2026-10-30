@@ -33,16 +33,21 @@ lv_obj_t *contentHost = nullptr;
 lv_obj_t *totalLbl = nullptr;
 lv_obj_t *emptyLbl = nullptr;
 lv_obj_t *kb = nullptr;
-lv_obj_t *activeTa = nullptr;
+lv_obj_t *editBar_ = nullptr;
+lv_obj_t *editTitle_ = nullptr;
+lv_obj_t *editTa_ = nullptr;
+lv_obj_t *activeSrc_ = nullptr; /* mlTa | recipeEcTa_ | name row sentinel */
 lv_obj_t *relayPanel = nullptr;
 lv_obj_t *relayBtnLbl = nullptr;
 lv_obj_t *mlTa = nullptr;
-lv_obj_t *nameTa = nullptr;
+lv_obj_t *nameLbl_ = nullptr;
 lv_obj_t *pctDetailLbl = nullptr;
 
 size_t editingIx_ = SIZE_MAX;
 bool relayOpen_ = false;
+bool assignOpen_ = false;
 bool kbIsNumber_ = false;
+bool editingName_ = false;
 char draftName_[NUTRIENT_NAME_LEN] = {};
 float draftMl_ = 1.0f;
 uint8_t draftRelay_ = 1;
@@ -58,11 +63,10 @@ bool recipeLeaveAfter_ = false;
 void relayDisplay(uint8_t relay1to6, char *buf, size_t n);
 
 void hideKeyboard() {
-    if (kb) {
-        lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
-    }
-    activeTa = nullptr;
+    UiKit::hideKbPreview(editBar_, kb);
+    activeSrc_ = nullptr;
     kbIsNumber_ = false;
+    editingName_ = false;
     if (recipePanel_ && recipeStep_ && !lv_obj_has_flag(recipeStep_, LV_OBJ_FLAG_HIDDEN)) {
         lv_obj_align(recipePanel_, LV_ALIGN_CENTER, 0, 0);
     }
@@ -95,6 +99,7 @@ void refreshEmpty();
 void showRecipeEcStep(bool leaveAfter);
 void hideRecipeEcStep();
 bool recipeEcMissing();
+const char *recipeLineName(size_t ix);
 
 void loadDraft(size_t ix) {
     draftName_[0] = '\0';
@@ -105,15 +110,16 @@ void loadDraft(size_t ix) {
     }
     strncpy(draftName_, NutrientConfig::listName(ix), NUTRIENT_NAME_LEN - 1);
     draftName_[NUTRIENT_NAME_LEN - 1] = '\0';
+    const char *lab = recipeLineName(ix);
+    if (lab && lab[0]) {
+        strncpy(draftName_, lab, NUTRIENT_NAME_LEN - 1);
+        draftName_[NUTRIENT_NAME_LEN - 1] = '\0';
+    }
     draftMl_ = NutrientConfig::listMlPerL(ix);
     draftRelay_ = NutrientConfig::listRelayNumber(ix);
 }
 
 void pullDraftFromUi() {
-    if (nameTa) {
-        strncpy(draftName_, lv_textarea_get_text(nameTa), NUTRIENT_NAME_LEN - 1);
-        draftName_[NUTRIENT_NAME_LEN - 1] = '\0';
-    }
     if (mlTa) {
         const char *txt = lv_textarea_get_text(mlTa);
         if (txt && txt[0]) {
@@ -138,6 +144,48 @@ void relayDisplay(uint8_t relay1to6, char *buf, size_t n) {
         relay1to6 = PUMP_RELAY_COUNT;
     }
     PumpConfig::formatTitle(doseFromRelayNumber(relay1to6), buf, n);
+}
+
+bool pumpNamed(uint8_t relay1to6) {
+    if (relay1to6 < 1 || relay1to6 > PUMP_RELAY_COUNT) {
+        return false;
+    }
+    const char *lab = PumpConfig::label(doseFromRelayNumber(relay1to6));
+    return lab && lab[0];
+}
+
+/** Bomba con nombre en Manual, fuera de la receta y fuera de pH. */
+bool pumpAssignable(uint8_t relay1to6) {
+    if (!pumpNamed(relay1to6)) {
+        return false;
+    }
+    if (NutrientConfig::phUpRelay() == relay1to6 || NutrientConfig::phDownRelay() == relay1to6) {
+        return false;
+    }
+    if (NutrientConfig::relaySharedByNutrient(relay1to6)) {
+        return false;
+    }
+    return true;
+}
+
+bool anyAssignable() {
+    for (uint8_t r = 1; r <= PUMP_RELAY_COUNT; ++r) {
+        if (pumpAssignable(r)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+const char *recipeLineName(size_t ix) {
+    const uint8_t r = NutrientConfig::listRelayNumber(ix);
+    if (r >= 1 && r <= PUMP_RELAY_COUNT) {
+        const char *lab = PumpConfig::label(doseFromRelayNumber(r));
+        if (lab && lab[0]) {
+            return lab;
+        }
+    }
+    return NutrientConfig::listName(ix);
 }
 
 void refreshListPcts() {
@@ -170,6 +218,11 @@ void onNavBack(lv_event_t *) {
         paintUi();
         return;
     }
+    if (assignOpen_) {
+        assignOpen_ = false;
+        paintUi();
+        return;
+    }
     if (recipeEcMissing()) {
         showRecipeEcStep(true);
         return;
@@ -194,7 +247,7 @@ void refreshEmpty() {
         lv_obj_add_flag(emptyLbl, LV_OBJ_FLAG_HIDDEN);
         return;
     }
-    if (NutrientConfig::listCount() == 0) {
+    if (NutrientConfig::listCount() == 0 || (assignOpen_ && !anyAssignable())) {
         lv_obj_clear_flag(emptyLbl, LV_OBJ_FLAG_HIDDEN);
         lv_label_set_text(emptyLbl, Strings::tr(Msg::NutEmptyHint));
     } else {
@@ -296,55 +349,86 @@ void applyMlFromTa() {
     draftMl_ = static_cast<float>(static_cast<int>(v * 10.0f + 0.5f)) / 10.0f;
 }
 
-void applyNameFromTa() {
-    if (!nameTa) {
+void applyNameFromPreview() {
+    if (!editTa_) {
         return;
     }
-    strncpy(draftName_, lv_textarea_get_text(nameTa), NUTRIENT_NAME_LEN - 1);
+    strncpy(draftName_, lv_textarea_get_text(editTa_), NUTRIENT_NAME_LEN - 1);
     draftName_[NUTRIENT_NAME_LEN - 1] = '\0';
+    if (nameLbl_) {
+        lv_label_set_text(nameLbl_, draftName_);
+    }
 }
 
-void showKeyboard(lv_obj_t *ta, bool numberMode) {
-    activeTa = ta;
+void applyMlFromPreview() {
+    if (!editTa_) {
+        return;
+    }
+    const char *txt = lv_textarea_get_text(editTa_);
+    if (!txt || !txt[0]) {
+        return;
+    }
+    float v = static_cast<float>(atof(txt));
+    if (v < 0.1f) {
+        v = 0.1f;
+    }
+    if (v > 50.0f) {
+        v = 50.0f;
+    }
+    draftMl_ = static_cast<float>(static_cast<int>(v * 10.0f + 0.5f)) / 10.0f;
+    if (mlTa) {
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%.1f", draftMl_);
+        lv_textarea_set_text(mlTa, buf);
+    }
+}
+
+void applyRecipeEcFromPreview() {
+    if (!editTa_ || !recipeEcTa_) {
+        return;
+    }
+    lv_textarea_set_text(recipeEcTa_, lv_textarea_get_text(editTa_));
+    applyRecipeEcFromTa();
+}
+
+void showKeyboard(lv_obj_t *src, bool numberMode, const char *title, const char *text,
+                  uint32_t maxLen) {
+    activeSrc_ = src;
     kbIsNumber_ = numberMode;
-    if (!kb) {
+    editingName_ = (src == nameLbl_);
+    if (!kb || !editBar_ || !editTa_) {
         return;
     }
-    lv_keyboard_set_mode(kb, numberMode ? LV_KEYBOARD_MODE_NUMBER : LV_KEYBOARD_MODE_TEXT_LOWER);
-    lv_keyboard_set_textarea(kb, ta);
-    lv_obj_clear_flag(kb, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(kb);
-    if (ta == recipeEcTa_ && recipePanel_) {
-        lv_obj_align(recipePanel_, LV_ALIGN_TOP_MID, 0, 8);
-        if (recipeStep_) {
-            lv_obj_move_foreground(recipeStep_);
-        }
+    UiKit::showKbPreview(editBar_, kb, editTa_, editTitle_, title, text, numberMode, maxLen,
+                         numberMode ? "0123456789." : nullptr);
+    if (recipeStep_ && !lv_obj_has_flag(recipeStep_, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_move_foreground(recipeStep_);
+        lv_obj_move_foreground(editBar_);
         lv_obj_move_foreground(kb);
-        return;
     }
-    setContentHeight(true);
-    lv_obj_scroll_to_view(ta, LV_ANIM_OFF);
 }
 
 void onTaFocused(lv_event_t *e) {
     lv_obj_t *ta = lv_event_get_target(e);
-    const bool num = (ta == mlTa || ta == recipeEcTa_);
-    showKeyboard(ta, num);
+    if (ta == mlTa) {
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%.1f", draftMl_);
+        showKeyboard(mlTa, true, "ml/L", buf, 8);
+        return;
+    }
+    if (ta == recipeEcTa_) {
+        const char *cur = lv_textarea_get_text(recipeEcTa_);
+        showKeyboard(recipeEcTa_, true, Strings::tr(Msg::RecipeEcTitle), cur ? cur : "", 8);
+    }
+}
+
+void onNameEdit(lv_event_t *) {
+    showKeyboard(nameLbl_, false, Strings::tr(Msg::PumpActionName), draftName_,
+                 NUTRIENT_NAME_LEN - 1);
 }
 
 void onTaDefocus(lv_event_t *e) {
-    lv_obj_t *ta = lv_event_get_target(e);
-    if (ta == nameTa) {
-        applyNameFromTa();
-    } else if (ta == mlTa) {
-        applyMlFromTa();
-        if (pctDetailLbl && editingIx_ < NutrientConfig::listCount()) {
-            char buf[16];
-            snprintf(buf, sizeof(buf), "%.0f%%", NutrientConfig::listProportionPct(editingIx_));
-            lv_label_set_text(pctDetailLbl, buf);
-        }
-        refreshTotal();
-    }
+    (void)e;
 }
 
 void onKbReady(lv_event_t *e) {
@@ -353,21 +437,21 @@ void onKbReady(lv_event_t *e) {
         return;
     }
     if (code == LV_EVENT_READY) {
-        if (activeTa == nameTa) {
-            applyNameFromTa();
-        } else if (activeTa == mlTa) {
-            applyMlFromTa();
-            if (mlTa) {
+        if (editingName_ || activeSrc_ == nameLbl_) {
+            applyNameFromPreview();
+        } else if (activeSrc_ == mlTa) {
+            applyMlFromPreview();
+            if (pctDetailLbl && editingIx_ < NutrientConfig::listCount()) {
                 char buf[16];
-                snprintf(buf, sizeof(buf), "%.1f", draftMl_);
-                lv_textarea_set_text(mlTa, buf);
+                snprintf(buf, sizeof(buf), "%.0f%%", NutrientConfig::listProportionPct(editingIx_));
+                lv_label_set_text(pctDetailLbl, buf);
             }
-        } else if (activeTa == recipeEcTa_) {
-            applyRecipeEcFromTa();
+            refreshTotal();
+        } else if (activeSrc_ == recipeEcTa_) {
+            applyRecipeEcFromPreview();
         }
     }
     hideKeyboard();
-    setContentHeight(false);
 }
 
 void onOpenDetail(lv_event_t *e) {
@@ -381,9 +465,23 @@ void onOpenDetail(lv_event_t *e) {
 
 void onAdd(lv_event_t *) {
     hideKeyboard();
-    if (!NutrientConfig::listAdd(nullptr, 1.0f)) {
+    assignOpen_ = !assignOpen_;
+    if (assignOpen_ && !anyAssignable()) {
+        refreshEmpty();
+    }
+    paintUi();
+}
+
+void onPickAssign(lv_event_t *e) {
+    const auto r = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(lv_event_get_user_data(e)));
+    if (!pumpAssignable(r)) {
         return;
     }
+    const char *lab = PumpConfig::label(doseFromRelayNumber(r));
+    if (!NutrientConfig::listAdd(lab, 1.0f, r)) {
+        return;
+    }
+    assignOpen_ = false;
     editingIx_ = NutrientConfig::listCount() - 1;
     loadDraft(editingIx_);
     relayOpen_ = false;
@@ -407,8 +505,14 @@ void onSave(lv_event_t *) {
         return;
     }
     pullDraftFromUi();
-    applyNameFromTa();
     applyMlFromTa();
+    if (!draftName_[0]) {
+        const char *lab = PumpConfig::label(doseFromRelayNumber(draftRelay_));
+        if (lab && lab[0]) {
+            strncpy(draftName_, lab, NUTRIENT_NAME_LEN - 1);
+            draftName_[NUTRIENT_NAME_LEN - 1] = '\0';
+        }
+    }
     NutrientConfig::listSetName(editingIx_, draftName_);
     NutrientConfig::listSetMlPerL(editingIx_, draftMl_);
     NutrientConfig::listSetRelayNumber(editingIx_, draftRelay_);
@@ -471,13 +575,20 @@ void onPickRelay(lv_event_t *e) {
         return;
     }
     draftRelay_ = r;
+    {
+        const char *lab = PumpConfig::label(doseFromRelayNumber(r));
+        if (lab && lab[0]) {
+            strncpy(draftName_, lab, NUTRIENT_NAME_LEN - 1);
+            draftName_[NUTRIENT_NAME_LEN - 1] = '\0';
+        }
+    }
     relayOpen_ = false;
     paintUi();
 }
 
 void paintList() {
     lv_obj_clean(contentHost);
-    nameTa = nullptr;
+    nameLbl_ = nullptr;
     mlTa = nullptr;
     relayPanel = nullptr;
     relayBtnLbl = nullptr;
@@ -529,6 +640,23 @@ void paintList() {
     lv_obj_clear_flag(ecChev, LV_OBJ_FLAG_CLICKABLE);
     y += kRowStep;
 
+    if (assignOpen_) {
+        for (uint8_t r = 1; r <= PUMP_RELAY_COUNT; ++r) {
+            if (!pumpAssignable(r)) {
+                continue;
+            }
+            char lab[PUMP_LABEL_LEN + 4];
+            const char *nm = PumpConfig::label(doseFromRelayNumber(r));
+            snprintf(lab, sizeof(lab), "%s", nm);
+            lv_obj_t *opt = UiKit::makeSecondaryButton(contentHost, lab, kRowW, kRowH, onPickAssign);
+            lv_obj_remove_event_cb(opt, onPickAssign);
+            lv_obj_set_pos(opt, 8, y);
+            lv_obj_add_event_cb(opt, onPickAssign, LV_EVENT_CLICKED,
+                                reinterpret_cast<void *>(static_cast<uintptr_t>(r)));
+            y += kRowStep;
+        }
+    }
+
     const size_t n = NutrientConfig::listCount();
     for (size_t i = 0; i < n; ++i) {
         const void *ud = reinterpret_cast<void *>(static_cast<uintptr_t>(i));
@@ -550,7 +678,7 @@ void paintList() {
         lv_obj_add_event_cb(row, onOpenDetail, LV_EVENT_CLICKED, const_cast<void *>(ud));
 
         lv_obj_t *name = lv_label_create(row);
-        lv_label_set_text(name, NutrientConfig::listName(i));
+        lv_label_set_text(name, recipeLineName(i));
         lv_obj_set_style_text_color(name, AppTheme::text(), 0);
         lv_obj_set_style_text_font(name, &lv_font_montserrat_20, 0);
         lv_obj_set_width(name, kNameW - 72);
@@ -602,7 +730,7 @@ void paintList() {
 
 void paintDetail() {
     lv_obj_clean(contentHost);
-    nameTa = nullptr;
+    nameLbl_ = nullptr;
     mlTa = nullptr;
     relayPanel = nullptr;
     relayBtnLbl = nullptr;
@@ -619,7 +747,7 @@ void paintDetail() {
     lv_coord_t y = 0;
     const lv_coord_t step = AppTheme::TOUCH_MIN_H + 8;
 
-    /* Nombre */
+    /* Nombre — tap abre teclado con preview encima */
     lv_obj_t *nameRow = lv_obj_create(contentHost);
     lv_obj_remove_style_all(nameRow);
     lv_obj_set_size(nameRow, kRowW, AppTheme::TOUCH_MIN_H + 8);
@@ -628,26 +756,19 @@ void paintDetail() {
     lv_obj_set_style_border_width(nameRow, 1, 0);
     lv_obj_set_style_border_color(nameRow, AppTheme::gridLine(), 0);
     lv_obj_clear_flag(nameRow, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(nameRow, LV_OBJ_FLAG_CLICKABLE);
+    UiKit::applyPressStyle(nameRow, AppTheme::surface(), AppTheme::surfaceAlt(), AppTheme::gridLine(),
+                           AppTheme::accent());
+    lv_obj_add_event_cb(nameRow, onNameEdit, LV_EVENT_CLICKED, nullptr);
 
-    nameTa = lv_textarea_create(nameRow);
-    lv_textarea_set_one_line(nameTa, true);
-    lv_textarea_set_max_length(nameTa, NUTRIENT_NAME_LEN - 1);
-    lv_textarea_set_text(nameTa, draftName_);
-    lv_textarea_set_placeholder_text(nameTa, Strings::tr(Msg::PumpNameHint));
-    lv_obj_set_size(nameTa, kRowW - 80, kBtnH);
-    lv_obj_align(nameTa, LV_ALIGN_LEFT_MID, 6, 0);
-    lv_obj_set_style_bg_color(nameTa, AppTheme::surfaceAlt(), 0);
-    lv_obj_set_style_bg_opa(nameTa, LV_OPA_COVER, 0);
-    lv_obj_set_style_text_color(nameTa, AppTheme::text(), 0);
-    lv_obj_set_style_text_font(nameTa, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_font(nameTa, &lv_font_montserrat_16, LV_PART_TEXTAREA_PLACEHOLDER);
-    lv_obj_set_style_text_color(nameTa, AppTheme::muted(), LV_PART_TEXTAREA_PLACEHOLDER);
-    lv_obj_set_style_border_width(nameTa, 1, 0);
-    lv_obj_set_style_border_color(nameTa, AppTheme::gridLine(), 0);
-    lv_obj_set_style_pad_all(nameTa, 4, 0);
-    lv_obj_clear_flag(nameTa, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(nameTa, onTaFocused, LV_EVENT_FOCUSED, nullptr);
-    lv_obj_add_event_cb(nameTa, onTaDefocus, LV_EVENT_DEFOCUSED, nullptr);
+    nameLbl_ = lv_label_create(nameRow);
+    lv_label_set_text(nameLbl_, draftName_);
+    lv_obj_set_style_text_color(nameLbl_, AppTheme::text(), 0);
+    lv_obj_set_style_text_font(nameLbl_, &lv_font_montserrat_20, 0);
+    lv_obj_set_width(nameLbl_, kRowW - 80);
+    lv_label_set_long_mode(nameLbl_, LV_LABEL_LONG_CLIP);
+    lv_obj_align(nameLbl_, LV_ALIGN_LEFT_MID, 8, 0);
+    lv_obj_clear_flag(nameLbl_, LV_OBJ_FLAG_CLICKABLE);
 
     char pctBuf[16];
     snprintf(pctBuf, sizeof(pctBuf), "%.0f%%", NutrientConfig::listProportionPct(ix));
@@ -699,10 +820,9 @@ void paintDetail() {
     y += step;
 
     if (relayOpen_) {
-        const lv_coord_t panelH = static_cast<lv_coord_t>(PUMP_RELAY_COUNT) * (AppTheme::TOUCH_MIN_H + 4);
         relayPanel = lv_obj_create(contentHost);
         lv_obj_remove_style_all(relayPanel);
-        lv_obj_set_size(relayPanel, kRowW, panelH);
+        lv_obj_set_size(relayPanel, kRowW, AppTheme::TOUCH_MIN_H);
         lv_obj_set_pos(relayPanel, 8, y);
         UiKit::forceOpaqueBg(relayPanel, AppTheme::surfaceAlt());
         lv_obj_set_style_border_width(relayPanel, 1, 0);
@@ -717,6 +837,10 @@ void paintDetail() {
             const bool sharedNut = NutrientConfig::relaySharedByNutrient(r, ix);
             const bool sharedPh =
                 (NutrientConfig::phUpRelay() == r || NutrientConfig::phDownRelay() == r);
+            const bool blocked = sharedPh || sharedNut;
+            if (!sel && (blocked || !pumpNamed(r))) {
+                continue;
+            }
 
             lv_obj_t *opt = UiKit::makeSecondaryButton(relayPanel, lab, kRowW - 16,
                                                        AppTheme::TOUCH_MIN_H, onPickRelay);
@@ -724,7 +848,6 @@ void paintDetail() {
             lv_obj_set_pos(opt, 8, py);
 
             lv_obj_t *optLbl = lv_obj_get_child(opt, 0);
-            const bool blocked = sharedPh || sharedNut;
             if (sel) {
                 UiKit::applySelectionStyle(opt, true, false);
             } else if (blocked) {
@@ -743,7 +866,8 @@ void paintDetail() {
             }
             py += AppTheme::TOUCH_MIN_H + 4;
         }
-        y += panelH + 4;
+        lv_obj_set_height(relayPanel, py + 2);
+        y += py + 6;
     }
 
     /* ml/L: − | textarea numérico | + */
@@ -785,6 +909,7 @@ void paintDetail() {
     lv_obj_set_style_pad_all(mlTa, 4, 0);
     lv_obj_clear_flag(mlTa, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(mlTa, onTaFocused, LV_EVENT_FOCUSED, nullptr);
+    lv_obj_add_event_cb(mlTa, onTaFocused, LV_EVENT_CLICKED, nullptr);
     lv_obj_add_event_cb(mlTa, onTaDefocus, LV_EVENT_DEFOCUSED, nullptr);
 
     lv_obj_t *plus = UiKit::makeSecondaryButton(mlRow, "+", 40, AppTheme::TOUCH_MIN_H, onPlusMl);
@@ -832,11 +957,13 @@ lv_obj_t *Screens::createNutrients(lv_obj_t *parent) {
     totalLbl = nullptr;
     emptyLbl = nullptr;
     kb = nullptr;
-    activeTa = nullptr;
+    editBar_ = editTitle_ = editTa_ = nullptr;
+    activeSrc_ = nullptr;
+    editingName_ = false;
     relayPanel = nullptr;
     relayBtnLbl = nullptr;
     mlTa = nullptr;
-    nameTa = nullptr;
+    nameLbl_ = nullptr;
     pctDetailLbl = nullptr;
     recipeStep_ = nullptr;
     recipePanel_ = nullptr;
@@ -845,6 +972,7 @@ lv_obj_t *Screens::createNutrients(lv_obj_t *parent) {
     addBtn = nullptr;
     editingIx_ = SIZE_MAX;
     relayOpen_ = false;
+    assignOpen_ = false;
     for (size_t i = 0; i < NUTRIENT_MAX; ++i) {
         pctLbls[i] = nullptr;
     }
@@ -888,6 +1016,7 @@ lv_obj_t *Screens::createNutrients(lv_obj_t *parent) {
     lv_obj_set_scrollbar_mode(contentHost, LV_SCROLLBAR_MODE_AUTO);
     setContentHeight(false);
 
+    editBar_ = UiKit::makeKbPreviewBar(root_, &editTitle_, &editTa_);
     kb = lv_keyboard_create(root_);
     lv_obj_set_size(kb, LCD_H_RES, kKbH);
     lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
@@ -957,6 +1086,7 @@ lv_obj_t *Screens::createNutrients(lv_obj_t *parent) {
     lv_obj_set_style_pad_all(recipeEcTa_, 6, 0);
     lv_obj_clear_flag(recipeEcTa_, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(recipeEcTa_, onTaFocused, LV_EVENT_FOCUSED, nullptr);
+    lv_obj_add_event_cb(recipeEcTa_, onTaFocused, LV_EVENT_CLICKED, nullptr);
 
     lv_obj_t *saveEc =
         UiKit::makePrimaryButton(recipePanel_, Strings::tr(Msg::NutSave), onRecipeEcSave);
@@ -970,7 +1100,7 @@ lv_obj_t *Screens::createNutrients(lv_obj_t *parent) {
 
 void Screens::refreshNutrients(lv_obj_t *root) {
     (void)root;
-    if (!contentHost || activeTa) {
+    if (!contentHost || (editBar_ && !lv_obj_has_flag(editBar_, LV_OBJ_FLAG_HIDDEN))) {
         return;
     }
     /* No reconstruir lista/detalle en cada tick — eso anulaba los clics. */

@@ -54,6 +54,38 @@ void setAutoEcIntervalSec(float v);
 void setAutoEcEnabled(bool on);
 void setAutoPhIntervalSec(float v);
 void setAutoPhEnabled(bool on);
+/** Copia el interruptor vivo del Master. No reenvía por UART. */
+void adoptAutoFromMaster(bool ecOn, bool phOn);
+/** Copia la malla que llegó de la web. Guarda NVS y no reenvía por UART. */
+struct LoopMirror {
+    bool hasMaxStepEc = false;
+    float maxStepEcPct = 50.0f;
+    bool hasMaxStepPh = false;
+    float maxStepPhPct = 50.0f;
+    bool hasConsumoEc = false;
+    bool consumoEc = false;
+    bool hasConsumoPh = false;
+    bool consumoPh = false;
+    bool hasEcIv = false;
+    float ecIv = 30.0f;
+    bool hasPhIv = false;
+    float phIv = 30.0f;
+    bool hasVolume = false;
+    float volumeL = 20.0f;
+    bool hasHomo = false;
+    float homoSec = 60.0f;
+    bool hasPulseMl = false;
+    float pulseMl = 2.0f;
+    bool hasPulseGap = false;
+    float pulseGapSec = 2.0f;
+    bool hasAutoEc = false;
+    bool autoEc = false;
+    bool hasAutoPh = false;
+    bool autoPh = false;
+};
+void adoptLoopFromMaster(const LoopMirror& in);
+/** true una vez tras un toque local de Auto EC o Auto pH. */
+bool takeAutoPush();
 void setMaxStepEc(float pct);
 void setMaxStepPh(float pct);
 void setDosingConstEc(float v);

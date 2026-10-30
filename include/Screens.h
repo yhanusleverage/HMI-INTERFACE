@@ -27,6 +27,7 @@ lv_obj_t *createPumpActions(lv_obj_t *parent, DoseChannel channel);
 lv_obj_t *createPumpName(lv_obj_t *parent, DoseChannel channel);
 lv_obj_t *createPumpPrime(lv_obj_t *parent, DoseChannel channel);
 lv_obj_t *createPumpCalib(lv_obj_t *parent, DoseChannel channel);
+lv_obj_t *createPhGain(lv_obj_t *parent, DoseChannel channel);
 lv_obj_t *createPumpTimeDose(lv_obj_t *parent, DoseChannel channel);
 lv_obj_t *createPumpQuantity(lv_obj_t *parent, DoseChannel channel);
 lv_obj_t *createTimeZone(lv_obj_t *parent);
@@ -56,6 +57,8 @@ lv_obj_t *createRelayName(lv_obj_t *parent);
 lv_obj_t *createRelayOnOff(lv_obj_t *parent);
 lv_obj_t *createMasterWifi(lv_obj_t *parent);
 lv_obj_t *createMasterWifiProfile(lv_obj_t *parent);
+lv_obj_t *createArmSlot(lv_obj_t *parent);
+lv_obj_t *createUrgent(lv_obj_t *parent);
 
 void refreshCentral(lv_obj_t *root);
 void refreshMenu(lv_obj_t *root);
@@ -74,6 +77,7 @@ void refreshPumpActions(lv_obj_t *root);
 void refreshPumpName(lv_obj_t *root);
 void refreshPumpPrime(lv_obj_t *root);
 void refreshPumpCalib(lv_obj_t *root);
+void refreshPhGain(lv_obj_t *root);
 void refreshPumpTimeDose(lv_obj_t *root);
 void refreshPumpQuantity(lv_obj_t *root);
 void refreshTimeZone(lv_obj_t *root);
@@ -103,6 +107,8 @@ void refreshRelayName(lv_obj_t *root);
 void refreshRelayOnOff(lv_obj_t *root);
 void refreshMasterWifi(lv_obj_t *root);
 void refreshMasterWifiProfile(lv_obj_t *root);
+void refreshArmSlot(lv_obj_t *root);
+void refreshUrgent(lv_obj_t *root);
 }
 
 #endif

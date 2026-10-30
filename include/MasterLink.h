@@ -13,10 +13,14 @@ void sendDoseStop(const char *channel);
 void sendDoseHold(const char *channel, bool on);
 /** Calibración caudal bomba → Master (NVS + Supabase). flowMlPerMin en UI. */
 void sendPumpFlowCalib(const char *channel, float flowMlPerMin, float measuredMl, float durationSec);
+/** Ganho químico pH: ml / |ΔpH|. acid=true es pH−. No lleva litros del sistema. */
+void sendPhDeltaGain(bool acid, float mlPerPh);
 /** Receta proporcional → master (HIDROWAVE updateNutrientProportions). */
 void sendNutrientProportions();
-/** Params malha fechada (volumen, pulsos, auto EC/pH). */
+/** Params de lazo. autoEc/autoPh solo si el usuario tocó ese interruptor. */
 void sendLoopControl();
+/** Emergencia: el Master corta la dosis de malla y deja el candado INACTIVO. */
+void sendMeshStop();
 /** normal | carrera. Mismo interruptor que la web. */
 void sendLevelInterlock(const char *mode);
 /** Ultimo modo visto por telemetria o confirmado por cmd_ack. */
@@ -42,6 +46,34 @@ void sendRelayLocal(uint8_t relay, const char *state, int durationSec);
 void sendRelaySlave(const char *mac, uint8_t relay, const char *state, int durationSec,
                     int cycleOffSec = 0, const char *mode = nullptr);
 bool linkOk();
+/** El usuario dejó el WiFi del Master apagado. false hasta la primera telemetría. */
+bool wifiUserKnown();
+bool wifiUserOffline();
+void rememberWifiUserOffline(bool offline);
+/** Auto EC o Auto pH en fase dosing. false hasta la primera telemetría. */
+bool autoDosing();
+bool autoDosingEc();
+bool autoDosingPh();
+bool autoHomoEc();
+bool autoHomoPh();
+/** ml reales de la dosis en curso. false si no está dosificando. */
+bool hasDoseMlEc();
+bool hasDoseMlPh();
+float doseMlEc();
+float doseMlPh();
+/** offline=true: el Master no busca red. El cable sigue. */
+void sendWifiUserMode(bool offline);
+
+/** Ventana de 24 h que el Master manda en telemetría. */
+struct DayWindow {
+    bool hasRef;
+    float ref;
+    uint32_t elapsedSec;
+    bool hasDeriv;
+    float deriv;
+};
+const DayWindow &consumoEc();
+const DayWindow &consumoPh();
 /** Último sys_info del Master (vacío si nunca llegó). */
 const char *masterDeviceId();
 bool masterCloudOk();

@@ -22,6 +22,7 @@ void wizardOnContinue(const char *ssid, const char *pass) {
 
 void wizardOnSkip() {
     MasterWifiDraft::clearNetwork();
+    MasterLink::sendWifiUserMode(true);
     NavShell::wizardContinue();
 }
 

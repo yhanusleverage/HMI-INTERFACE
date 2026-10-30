@@ -26,6 +26,7 @@ bool curParamEditable = false;
 bool curPhUp_ = true;
 char curAtlasMac_[SlaveInventory::kMacLen] = {};
 uint8_t curAtlasRelay_ = 0;
+uint8_t armSlot_ = 0;
 unsigned long lastUiMs = 0;
 bool wizard_ = false;
 
@@ -101,6 +102,8 @@ lv_obj_t *build(ScreenId id, ParamId param, DoseChannel dose) {
         return Screens::createPumpPrime(contentHost, dose);
     case ScreenId::PumpCalib:
         return Screens::createPumpCalib(contentHost, dose);
+    case ScreenId::PhGain:
+        return Screens::createPhGain(contentHost, dose);
     case ScreenId::PumpTimeDose:
         return Screens::createPumpTimeDose(contentHost, dose);
     case ScreenId::PumpQuantity:
@@ -159,6 +162,10 @@ lv_obj_t *build(ScreenId id, ParamId param, DoseChannel dose) {
         return Screens::createMasterWifi(contentHost);
     case ScreenId::MasterWifiProfile:
         return Screens::createMasterWifiProfile(contentHost);
+    case ScreenId::ArmSlot:
+        return Screens::createArmSlot(contentHost);
+    case ScreenId::Urgent:
+        return Screens::createUrgent(contentHost);
     }
     return Screens::createCentral(contentHost);
 }
@@ -218,6 +225,9 @@ void refreshActive() {
         break;
     case ScreenId::PumpCalib:
         Screens::refreshPumpCalib(active);
+        break;
+    case ScreenId::PhGain:
+        Screens::refreshPhGain(active);
         break;
     case ScreenId::PumpTimeDose:
         Screens::refreshPumpTimeDose(active);
@@ -303,6 +313,12 @@ void refreshActive() {
         break;
     case ScreenId::MasterWifiProfile:
         Screens::refreshMasterWifiProfile(active);
+        break;
+    case ScreenId::ArmSlot:
+        Screens::refreshArmSlot(active);
+        break;
+    case ScreenId::Urgent:
+        Screens::refreshUrgent(active);
         break;
     }
 }
@@ -411,6 +427,13 @@ void NavShell::begin() {
         lv_obj_invalidate(active);
     }
 }
+
+void NavShell::goToArmSlot(uint8_t slot) {
+    armSlot_ = slot > 2 ? 0 : slot;
+    navigate(ScreenId::ArmSlot, curParam, curDose, false);
+}
+
+uint8_t NavShell::armSlot() { return armSlot_; }
 
 void NavShell::goTo(ScreenId id, ParamId param) {
     const bool editable = (id == ScreenId::ParamDetail) ? curParamEditable : false;

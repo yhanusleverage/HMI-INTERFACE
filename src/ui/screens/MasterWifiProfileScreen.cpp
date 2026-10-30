@@ -130,8 +130,7 @@ void onContinue(lv_event_t *) {
     const char *email = emailTa_ ? lv_textarea_get_text(emailTa_) : "";
     const char *name = nameTa_ ? lv_textarea_get_text(nameTa_) : "";
     const char *loc = locTa_ ? lv_textarea_get_text(locTa_) : "";
-    if (!email || !email[0] || !name || !name[0] || !loc || !loc[0] ||
-        !MasterWifiDraft::hasNetwork()) {
+    if (!email || !email[0] || !name || !name[0] || !loc || !loc[0]) {
         if (networkBanner_) {
             lv_label_set_text(networkBanner_, Strings::tr(Msg::WizardFieldsRequired));
         }

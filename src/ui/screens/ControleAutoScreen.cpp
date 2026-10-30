@@ -46,6 +46,7 @@ lv_obj_t *saveBtn_ = nullptr;
 lv_obj_t *persistHint_ = nullptr;
 Field editingField_ = Field::Count;
 Draft draft_{};
+bool draftDirty_ = false;
 
 lv_obj_t *valLbls[static_cast<size_t>(Field::Count)] = {};
 lv_obj_t *btnEcOn = nullptr;
@@ -102,6 +103,7 @@ void loadDraft() {
     draft_.consumoPh24h = ReservoirConfig::consumoPh24hEnabled();
     draft_.armed = ReservoirConfig::dosingArmed();
     draft_.uiLocked = ReservoirConfig::autoUiLocked();
+    draftDirty_ = false;
 }
 
 void commitDraft() {
@@ -238,6 +240,7 @@ void onSave(lv_event_t *) {
     }
     hideNumericKb();
     commitDraft();
+    draftDirty_ = false;
     NavShell::back();
 }
 
@@ -464,7 +467,7 @@ void onEcOn(lv_event_t *) {
         return;
     }
     draft_.autoEc = true;
-    ReservoirConfig::setAutoEcEnabled(true);
+    draftDirty_ = true;
     refreshToggles();
 }
 void onEcOff(lv_event_t *) {
@@ -472,7 +475,7 @@ void onEcOff(lv_event_t *) {
         return;
     }
     draft_.autoEc = false;
-    ReservoirConfig::setAutoEcEnabled(false);
+    draftDirty_ = true;
     refreshToggles();
 }
 void onPhOn(lv_event_t *) {
@@ -480,7 +483,7 @@ void onPhOn(lv_event_t *) {
         return;
     }
     draft_.autoPh = true;
-    ReservoirConfig::setAutoPhEnabled(true);
+    draftDirty_ = true;
     refreshToggles();
 }
 void onPhOff(lv_event_t *) {
@@ -488,7 +491,7 @@ void onPhOff(lv_event_t *) {
         return;
     }
     draft_.autoPh = false;
-    ReservoirConfig::setAutoPhEnabled(false);
+    draftDirty_ = true;
     refreshToggles();
 }
 void onConsOn(lv_event_t *) {
@@ -496,7 +499,7 @@ void onConsOn(lv_event_t *) {
         return;
     }
     draft_.consumoDiario = true;
-    ReservoirConfig::setConsumoDiarioEnabled(true);
+    draftDirty_ = true;
     refreshToggles();
 }
 void onConsOff(lv_event_t *) {
@@ -504,7 +507,7 @@ void onConsOff(lv_event_t *) {
         return;
     }
     draft_.consumoDiario = false;
-    ReservoirConfig::setConsumoDiarioEnabled(false);
+    draftDirty_ = true;
     refreshToggles();
 }
 void onConsPhOn(lv_event_t *) {
@@ -512,7 +515,7 @@ void onConsPhOn(lv_event_t *) {
         return;
     }
     draft_.consumoPh24h = true;
-    ReservoirConfig::setConsumoPh24hEnabled(true);
+    draftDirty_ = true;
     refreshToggles();
 }
 void onConsPhOff(lv_event_t *) {
@@ -520,7 +523,7 @@ void onConsPhOff(lv_event_t *) {
         return;
     }
     draft_.consumoPh24h = false;
-    ReservoirConfig::setConsumoPh24hEnabled(false);
+    draftDirty_ = true;
     refreshToggles();
 }
 void hideArmConfirm() {
@@ -557,7 +560,7 @@ void showArmToast() {
 
 void commitArm(bool armed) {
     draft_.armed = armed;
-    ReservoirConfig::setDosingArmed(armed);
+    draftDirty_ = true;
     refreshToggles();
 }
 
@@ -983,12 +986,19 @@ void Screens::refreshControleAuto(lv_obj_t *root) {
     if (!root_ || root != root_) {
         return;
     }
-    /* Flags en vivo = sistema (Central / UART); números siguen en borrador hasta Save. */
-    draft_.armed = ReservoirConfig::dosingArmed();
-    draft_.uiLocked = ReservoirConfig::autoUiLocked();
-    draft_.autoEc = ReservoirConfig::autoEcEnabled();
-    draft_.autoPh = ReservoirConfig::autoPhEnabled();
-    draft_.consumoDiario = ReservoirConfig::consumoDiarioEnabled();
-    draft_.consumoPh24h = ReservoirConfig::consumoPh24hEnabled();
+    /* Sin tocar, los interruptores siguen al Master. Con borrador, esperan a Guardar. */
+    if (!draftDirty_) {
+        draft_.ecIv = ReservoirConfig::autoEcIntervalSec();
+        draft_.phIv = ReservoirConfig::autoPhIntervalSec();
+        draft_.maxStepEc = ReservoirConfig::maxStepEc();
+        draft_.maxStepPh = ReservoirConfig::maxStepPh();
+        draft_.armed = ReservoirConfig::dosingArmed();
+        draft_.uiLocked = ReservoirConfig::autoUiLocked();
+        draft_.autoEc = ReservoirConfig::autoEcEnabled();
+        draft_.autoPh = ReservoirConfig::autoPhEnabled();
+        draft_.consumoDiario = ReservoirConfig::consumoDiarioEnabled();
+        draft_.consumoPh24h = ReservoirConfig::consumoPh24hEnabled();
+        refreshNums();
+    }
     refreshToggles();
 }

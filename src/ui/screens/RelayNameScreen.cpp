@@ -16,6 +16,9 @@ namespace {
 
 lv_obj_t *nameTa = nullptr;
 lv_obj_t *kb = nullptr;
+lv_obj_t *editBar_ = nullptr;
+lv_obj_t *editTitle_ = nullptr;
+lv_obj_t *editTa_ = nullptr;
 lv_obj_t *statusLbl = nullptr;
 char draft_[32] = {};
 
@@ -23,9 +26,16 @@ void setStatus(UiKit::PumpUiStatus st, const char *msg) {
     UiKit::setPumpStatus(statusLbl, st, msg);
 }
 
-void hideKb() {
-    if (kb) {
-        lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
+void hideKb() { UiKit::hideKbPreview(editBar_, kb); }
+
+void syncDraftFromPreview() {
+    if (!editTa_) {
+        return;
+    }
+    strncpy(draft_, lv_textarea_get_text(editTa_), sizeof(draft_) - 1);
+    draft_[sizeof(draft_) - 1] = '\0';
+    if (nameTa) {
+        lv_textarea_set_text(nameTa, draft_);
     }
 }
 
@@ -35,10 +45,6 @@ void onBack(lv_event_t *) {
 }
 
 void commitName() {
-    if (nameTa) {
-        strncpy(draft_, lv_textarea_get_text(nameTa), sizeof(draft_) - 1);
-        draft_[sizeof(draft_) - 1] = '\0';
-    }
     const char *mac = NavShell::currentAtlasMac();
     const uint8_t relay = NavShell::currentAtlasRelay();
     MasterLink::setRelayDisplayName(mac, relay, draft_);
@@ -47,7 +53,8 @@ void commitName() {
 
 void onKbDone(lv_event_t *e) {
     const lv_event_code_t code = lv_event_get_code(e);
-    if (code == LV_EVENT_READY && nameTa) {
+    if (code == LV_EVENT_READY) {
+        syncDraftFromPreview();
         commitName();
         hideKb();
         NavShell::back();
@@ -57,16 +64,18 @@ void onKbDone(lv_event_t *e) {
 }
 
 void onNameFocus(lv_event_t *) {
-    if (!kb || !nameTa) {
-        return;
-    }
-    lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_TEXT_LOWER);
-    lv_keyboard_set_textarea(kb, nameTa);
-    lv_obj_clear_flag(kb, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(kb);
+    const char *cur = nameTa ? lv_textarea_get_text(nameTa) : draft_;
+    UiKit::showKbPreview(editBar_, kb, editTa_, editTitle_, Strings::tr(Msg::RelayActionName), cur,
+                         false, sizeof(draft_) - 1, nullptr);
 }
 
 void onSave(lv_event_t *) {
+    if (editBar_ && !lv_obj_has_flag(editBar_, LV_OBJ_FLAG_HIDDEN)) {
+        syncDraftFromPreview();
+    } else if (nameTa) {
+        strncpy(draft_, lv_textarea_get_text(nameTa), sizeof(draft_) - 1);
+        draft_[sizeof(draft_) - 1] = '\0';
+    }
     commitName();
     hideKb();
     NavShell::back();
@@ -77,6 +86,7 @@ void onSave(lv_event_t *) {
 lv_obj_t *Screens::createRelayName(lv_obj_t *parent) {
     nameTa = nullptr;
     kb = nullptr;
+    editBar_ = editTitle_ = editTa_ = nullptr;
     statusLbl = nullptr;
     memset(draft_, 0, sizeof(draft_));
 
@@ -124,6 +134,7 @@ lv_obj_t *Screens::createRelayName(lv_obj_t *parent) {
     lv_obj_set_style_border_color(nameTa, AppTheme::gridLine(), 0);
     lv_obj_set_style_border_width(nameTa, 1, 0);
     lv_obj_add_event_cb(nameTa, onNameFocus, LV_EVENT_FOCUSED, nullptr);
+    lv_obj_add_event_cb(nameTa, onNameFocus, LV_EVENT_CLICKED, nullptr);
     y += AppTheme::TOUCH_MIN_H + 20;
 
     lv_obj_t *save = UiKit::makePrimaryButton(root, Strings::tr(Msg::NutSave), onSave);
@@ -135,6 +146,7 @@ lv_obj_t *Screens::createRelayName(lv_obj_t *parent) {
     lv_obj_set_pos(statusLbl, 12, y);
     setStatus(UiKit::PumpUiStatus::Idle, Strings::tr(Msg::ReadyStatus));
 
+    editBar_ = UiKit::makeKbPreviewBar(root, &editTitle_, &editTa_);
     kb = lv_keyboard_create(root);
     UiKit::styleDarkKeyboard(kb);
     lv_obj_add_event_cb(kb, onKbDone, LV_EVENT_READY, nullptr);

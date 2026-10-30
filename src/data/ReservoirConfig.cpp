@@ -1,6 +1,7 @@
 #include "ReservoirConfig.h"
 #include "MasterLink.h"
 #include "Config.h"
+#include <Arduino.h>
 #include <Preferences.h>
 
 namespace {
@@ -27,6 +28,7 @@ bool autoUiLocked_ = true;
 bool consumoDiario_ = false;
 bool consumoPh24h_ = false;
 bool batchEdit_ = false;
+bool pushAutoFlags_ = false;
 
 float clampf(float v, float lo, float hi) {
     if (v < lo) {
@@ -150,6 +152,7 @@ void ReservoirConfig::endBatch(bool commit) {
         save();
         syncToMaster();
     } else {
+        pushAutoFlags_ = false;
         load();
     }
 }
@@ -209,6 +212,7 @@ void ReservoirConfig::setAutoEcIntervalSec(float v) {
 }
 void ReservoirConfig::setAutoEcEnabled(bool on) {
     autoEc_ = on;
+    pushAutoFlags_ = true;
     persistAndSync();
 }
 void ReservoirConfig::setAutoPhIntervalSec(float v) {
@@ -217,7 +221,72 @@ void ReservoirConfig::setAutoPhIntervalSec(float v) {
 }
 void ReservoirConfig::setAutoPhEnabled(bool on) {
     autoPh_ = on;
+    pushAutoFlags_ = true;
     persistAndSync();
+}
+
+void ReservoirConfig::adoptAutoFromMaster(bool ecOn, bool phOn) {
+    if (autoEc_ == ecOn && autoPh_ == phOn) {
+        return;
+    }
+    autoEc_ = ecOn;
+    autoPh_ = phOn;
+    Serial.printf("[HMI AUTO] master autoEc=%d autoPh=%d\n", ecOn ? 1 : 0, phOn ? 1 : 0);
+    if (batchEdit_) {
+        return;
+    }
+    save();
+}
+
+void ReservoirConfig::adoptLoopFromMaster(const LoopMirror& in) {
+    if (batchEdit_) {
+        return;
+    }
+    bool changed = false;
+    auto takeFloat = [&](float& dst, bool has, float value, float lo, float hi, float eps) {
+        if (!has) {
+            return;
+        }
+        const float next = clampf(value, lo, hi);
+        if (fabsf(dst - next) <= eps) {
+            return;
+        }
+        dst = next;
+        changed = true;
+    };
+    auto takeBool = [&](bool& dst, bool has, bool value) {
+        if (!has || dst == value) {
+            return;
+        }
+        dst = value;
+        changed = true;
+    };
+    takeFloat(maxStepEc_, in.hasMaxStepEc, in.maxStepEcPct, 5.0f, 100.0f, 0.4f);
+    takeFloat(maxStepPh_, in.hasMaxStepPh, in.maxStepPhPct, 5.0f, 100.0f, 0.4f);
+    takeFloat(autoEcIv_, in.hasEcIv, in.ecIv, 5.0f, 3600.0f, 0.5f);
+    takeFloat(autoPhIv_, in.hasPhIv, in.phIv, 5.0f, 3600.0f, 0.5f);
+    takeFloat(volumeL_, in.hasVolume, in.volumeL, 1.0f, 10000.0f, 0.05f);
+    takeFloat(homoSec_, in.hasHomo, in.homoSec, 0.0f, 3600.0f, 0.5f);
+    takeFloat(pulseMl_, in.hasPulseMl, in.pulseMl, 0.1f, 50.0f, 0.05f);
+    takeFloat(pulseGapSec_, in.hasPulseGap, in.pulseGapSec, 0.0f, 120.0f, 0.05f);
+    takeBool(consumoDiario_, in.hasConsumoEc, in.consumoEc);
+    takeBool(consumoPh24h_, in.hasConsumoPh, in.consumoPh);
+    takeBool(autoEc_, in.hasAutoEc, in.autoEc);
+    takeBool(autoPh_, in.hasAutoPh, in.autoPh);
+    if (!changed) {
+        return;
+    }
+    pushAutoFlags_ = false;
+    save();
+    Serial.printf("[HMI LOOP] web Aec=%.0f Aph=%.0f cons=%d/%d auto=%d/%d\n",
+                  maxStepEc_, maxStepPh_, consumoDiario_ ? 1 : 0, consumoPh24h_ ? 1 : 0,
+                  autoEc_ ? 1 : 0, autoPh_ ? 1 : 0);
+}
+
+bool ReservoirConfig::takeAutoPush() {
+    const bool push = pushAutoFlags_;
+    pushAutoFlags_ = false;
+    return push;
 }
 void ReservoirConfig::setMaxStepEc(float pct) {
     maxStepEc_ = normalizeAggrPct(pct);

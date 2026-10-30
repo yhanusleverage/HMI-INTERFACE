@@ -21,6 +21,17 @@ static size_t lineLen = 0;
 static bool discardRestOfLine = false;
 static unsigned long lastRxMs = 0;
 static bool linked = false;
+static bool wifiUserKnown_ = false;
+static bool wifiUserOffline_ = false;
+static bool autoDosing_ = false;
+static bool autoDosingEc_ = false;
+static bool autoDosingPh_ = false;
+static bool autoHomoEc_ = false;
+static bool autoHomoPh_ = false;
+static bool hasDoseMlEc_ = false;
+static bool hasDoseMlPh_ = false;
+static float doseMlEc_ = NAN;
+static float doseMlPh_ = NAN;
 static char masterDeviceIdBuf[40] = {};
 static bool masterCloudOkFlag = false;
 static bool masterSysInfoValidFlag = false;
@@ -38,6 +49,8 @@ static char masterLocationBuf[32] = {};
 static char lastCmdActionBuf[24] = {};
 static uint8_t lastCmdAckState_ = 0;
 static char ilockMode_[8] = "normal";
+static MasterLink::DayWindow ecDay_{};
+static MasterLink::DayWindow phDay_{};
 #if UART_LINK_DEBUG
 static uint32_t rxByteCount = 0;
 static uint32_t rxLineCount = 0;
@@ -362,6 +375,28 @@ static void onRulesEnd() {
     }
 }
 
+static void takeDayWindow(MasterLink::DayWindow &w, JsonDocument &doc, const char *t0Key,
+                          const char *elKey, const char *derivKey) {
+    if (doc.containsKey(t0Key)) {
+        const float ref = doc[t0Key] | NAN;
+        w.hasRef = isfinite(ref);
+        w.ref = ref;
+        w.elapsedSec = doc[elKey] | 0;
+    } else {
+        w.hasRef = false;
+        w.ref = NAN;
+        w.elapsedSec = 0;
+    }
+    if (doc.containsKey(derivKey)) {
+        const float d = doc[derivKey] | NAN;
+        w.hasDeriv = isfinite(d);
+        w.deriv = d;
+    } else {
+        w.hasDeriv = false;
+        w.deriv = NAN;
+    }
+}
+
 static void handleLine(const char *line) {
     JsonDocument doc;
     const DeserializationError err = deserializeJson(doc, line);
@@ -465,6 +500,66 @@ static void handleLine(const char *line) {
         markLinkAlive();
         return;
     }
+    if (strcmp(t, "loop_cfg") == 0) {
+        ReservoirConfig::LoopMirror in;
+        if (doc.containsKey("maxStepEc")) {
+            in.hasMaxStepEc = true;
+            in.maxStepEcPct = (doc["maxStepEc"] | 0.5f) * 100.0f;
+        }
+        if (doc.containsKey("maxStepPh")) {
+            in.hasMaxStepPh = true;
+            in.maxStepPhPct = (doc["maxStepPh"] | 0.5f) * 100.0f;
+        }
+        if (doc.containsKey("consumoDiario")) {
+            in.hasConsumoEc = true;
+            in.consumoEc = doc["consumoDiario"] | false;
+        }
+        if (doc.containsKey("consumoPh24h")) {
+            in.hasConsumoPh = true;
+            in.consumoPh = doc["consumoPh24h"] | false;
+        }
+        if (doc.containsKey("autoEcIntervalSec")) {
+            in.hasEcIv = true;
+            in.ecIv = doc["autoEcIntervalSec"] | 30;
+        }
+        if (doc.containsKey("autoPhIntervalSec")) {
+            in.hasPhIv = true;
+            in.phIv = doc["autoPhIntervalSec"] | 30;
+        }
+        if (doc.containsKey("volumeL")) {
+            in.hasVolume = true;
+            in.volumeL = doc["volumeL"] | 0.0f;
+        }
+        if (doc.containsKey("homoSec")) {
+            in.hasHomo = true;
+            in.homoSec = doc["homoSec"] | 60;
+        }
+        if (doc.containsKey("pulseMl")) {
+            in.hasPulseMl = true;
+            in.pulseMl = doc["pulseMl"] | 2.0f;
+        }
+        if (doc.containsKey("pulseGapSec")) {
+            in.hasPulseGap = true;
+            in.pulseGapSec = doc["pulseGapSec"] | 2.0f;
+        }
+        if (doc.containsKey("autoEc")) {
+            in.hasAutoEc = true;
+            in.autoEc = doc["autoEc"] | false;
+        }
+        if (doc.containsKey("autoPh")) {
+            in.hasAutoPh = true;
+            in.autoPh = doc["autoPh"] | false;
+        }
+        if (doc.containsKey("ecLo") && doc.containsKey("ecHi")) {
+            NutrientConfig::adoptBand(true, doc["ecLo"], doc["ecHi"]);
+        }
+        if (doc.containsKey("phLo") && doc.containsKey("phHi")) {
+            NutrientConfig::adoptBand(false, doc["phLo"], doc["phHi"]);
+        }
+        ReservoirConfig::adoptLoopFromMaster(in);
+        markLinkAlive();
+        return;
+    }
     if (strcmp(t, "plant_cfg") == 0) {
         JsonArray pumps = doc["pumps"].as<JsonArray>();
         const char *names[NUTRIENT_MAX];
@@ -482,6 +577,10 @@ static void handleLine(const char *line) {
                 PumpConfig::setFlowMlPerMin(ch, flow);
             }
             if (ml <= 0.05f || !name[0] || strncmp(name, "pump_r", 6) == 0) {
+                if (tryDoseFromRelayNumber(static_cast<uint8_t>(relay), &ch) && name[0] &&
+                    strncmp(name, "pump_r", 6) != 0 && PumpConfig::label(ch)[0] == '\0') {
+                    PumpConfig::setLabelLocal(ch, name);
+                }
                 continue;
             }
             if (relay < 1 || relay > static_cast<int>(PUMP_RELAY_COUNT) || nQty >= NUTRIENT_MAX) {
@@ -549,6 +648,44 @@ static void handleLine(const char *line) {
         const char *im = doc["ilock"] | "";
         MasterLink::rememberLevelInterlock(im);
     }
+    if (doc.containsKey("wifi_off")) {
+        wifiUserKnown_ = true;
+        wifiUserOffline_ = (doc["wifi_off"] | 0) != 0;
+    }
+    if (doc.containsKey("dosing")) {
+        autoDosing_ = (doc["dosing"] | 0) != 0;
+    }
+    if (doc.containsKey("dosing_ec")) {
+        autoDosingEc_ = (doc["dosing_ec"] | 0) != 0;
+    }
+    if (doc.containsKey("dosing_ph")) {
+        autoDosingPh_ = (doc["dosing_ph"] | 0) != 0;
+    }
+    if (doc.containsKey("homo_ec")) {
+        autoHomoEc_ = (doc["homo_ec"] | 0) != 0;
+    }
+    if (doc.containsKey("homo_ph")) {
+        autoHomoPh_ = (doc["homo_ph"] | 0) != 0;
+    }
+    if (doc.containsKey("dose_ml_ec")) {
+        doseMlEc_ = doc["dose_ml_ec"] | NAN;
+        hasDoseMlEc_ = isfinite(doseMlEc_) && doseMlEc_ > 0.05f;
+    } else {
+        hasDoseMlEc_ = false;
+        doseMlEc_ = NAN;
+    }
+    if (doc.containsKey("dose_ml_ph")) {
+        doseMlPh_ = doc["dose_ml_ph"] | NAN;
+        hasDoseMlPh_ = isfinite(doseMlPh_) && doseMlPh_ > 0.05f;
+    } else {
+        hasDoseMlPh_ = false;
+        doseMlPh_ = NAN;
+    }
+    if (doc.containsKey("autoEc") && doc.containsKey("autoPh")) {
+        ReservoirConfig::adoptAutoFromMaster(doc["autoEc"] | false, doc["autoPh"] | false);
+        takeDayWindow(ecDay_, doc, "ec_t0", "ec_el", "deriv_ec");
+        takeDayWindow(phDay_, doc, "ph_t0", "ph_el", "deriv_ph");
+    }
     const float ph = doc["ph"] | NAN;
     const float ec = doc["ec"] | NAN;
     const float temp = doc["temp_agua"] | NAN;
@@ -593,27 +730,43 @@ static void maybeLogUartDebug(unsigned long nowMs) {
 #endif
 }
 
+/**
+ * Pedir sys_info pronto (UART OK), sin esperar hub Sistema.
+ * Así applyFromMaster puede guardar/conectar credenciales del Master.
+ */
+static void ensureEarlySysInfo() {
+    if (!linked) {
+        return;
+    }
+    const unsigned long now = millis();
+    bool need = !masterSysInfoValidFlag;
+    if (!need && masterHasWifiFlag && !WifiConfig::isConnected()) {
+        const uint8_t st = WifiConfig::linkState();
+        need = (st == 0 || st == 3);
+    }
+    if (!need) {
+        return;
+    }
+    if (lastSysInfoAskMs_ != 0 && (now - lastSysInfoAskMs_) < 2000UL) {
+        return;
+    }
+    lastSysInfoAskMs_ = now;
+    MasterLink::requestSysInfo();
+}
+
 /** Master sin NVS y HMI ya asociado: manda la clave probada, una vez. */
 static void offerSavedWifiIfMasterEmpty() {
-#if UART_BENCH
-    return;
-#else
     if (wifiOfferDone_) {
         return;
     }
-    if (!WifiConfig::configured()) {
-        wifiOfferDone_ = true;
-        return;
-    }
     if (!masterSysInfoValidFlag) {
-        const unsigned long now = millis();
-        if (lastSysInfoAskMs_ == 0 || (now - lastSysInfoAskMs_) >= 2000UL) {
-            lastSysInfoAskMs_ = now;
-            MasterLink::requestSysInfo();
-        }
         return;
     }
     if (masterHasWifiFlag) {
+        wifiOfferDone_ = true;
+        return;
+    }
+    if (!WifiConfig::configured()) {
         wifiOfferDone_ = true;
         return;
     }
@@ -631,7 +784,6 @@ static void offerSavedWifiIfMasterEmpty() {
     wifiOfferDone_ = true;
     Serial.printf("[WIFI] master sin red — enviando clave ya conectada ssid=%s\n", ssid);
     MasterLink::sendWifiConfig(ssid, pass);
-#endif
 }
 
 void MasterLink::loop() {
@@ -678,6 +830,7 @@ void MasterLink::loop() {
         DataStore::instance().setLinkOk(false);
     }
 
+    ensureEarlySysInfo();
     offerSavedWifiIfMasterEmpty();
 }
 
@@ -724,6 +877,15 @@ void MasterLink::sendDoseHold(const char *channel, bool on) {
     emitJson(doc);
 }
 
+void MasterLink::sendPhDeltaGain(bool acid, float mlPerPh) {
+    JsonDocument doc;
+    doc["t"] = "cmd";
+    doc["action"] = "ph_delta_gain";
+    doc["side"] = acid ? "down" : "up";
+    doc["mlPerPh"] = mlPerPh;
+    emitJson(doc);
+}
+
 void MasterLink::sendPumpFlowCalib(const char *channel, float flowMlPerMin, float measuredMl,
                                    float durationSec) {
     JsonDocument doc;
@@ -747,17 +909,23 @@ void MasterLink::sendNutrientProportions() {
     const size_t n = NutrientConfig::listCount();
     for (size_t i = 0; i < n; ++i) {
         const float ml = NutrientConfig::listMlPerL(i);
+        const uint8_t rn = NutrientConfig::listRelayNumber(i);
         const char *nm = NutrientConfig::listName(i);
+        if (rn >= 1 && rn <= PUMP_RELAY_COUNT) {
+            const char *lab = PumpConfig::label(doseFromRelayNumber(rn));
+            if (lab && lab[0]) {
+                nm = lab;
+            }
+        }
         if (ml <= 0.0f || !nm || nm[0] == '\0') {
             continue;
         }
         JsonObject o = arr.add<JsonObject>();
         o["name"] = nm;
-        o["relayNumber"] = NutrientConfig::listRelayNumber(i);
+        o["relayNumber"] = rn;
         o["mlPerLiter"] = ml;
         o["proportion"] = NutrientConfig::listProportion(i);
         o["active"] = true;
-        const uint8_t rn = NutrientConfig::listRelayNumber(i);
         if (rn >= 1 && rn <= PUMP_RELAY_COUNT) {
             const float qMin = PumpConfig::flowMlPerMin(doseFromRelayNumber(rn));
             if (qMin > 0.01f) {
@@ -790,6 +958,13 @@ void MasterLink::sendLevelInterlock(const char *mode) {
     emitJson(doc);
 }
 
+void MasterLink::sendMeshStop() {
+    JsonDocument doc;
+    doc["t"] = "cmd";
+    doc["action"] = "mesh_stop";
+    emitJson(doc);
+}
+
 void MasterLink::sendLoopControl() {
     JsonDocument doc;
     doc["t"] = "cmd";
@@ -804,12 +979,13 @@ void MasterLink::sendLoopControl() {
         (ReservoirConfig::dosingMode() == ReservoirConfig::DosingMode::Recirculating) ? "recirc"
                                                                                       : "batch";
     doc["dosingArmed"] = ReservoirConfig::dosingArmed();
-    /* Sin armar, Auto no sale activo (Inactive|Dosing). */
-    const bool armed = ReservoirConfig::dosingArmed();
-    doc["autoEc"] = armed && ReservoirConfig::autoEcEnabled();
     doc["autoEcIntervalSec"] = ReservoirConfig::autoEcIntervalSec();
-    doc["autoPh"] = armed && ReservoirConfig::autoPhEnabled();
     doc["autoPhIntervalSec"] = ReservoirConfig::autoPhIntervalSec();
+    /* Solo el toque del interruptor. El resto del lazo no pisa el Auto de la web. */
+    if (ReservoirConfig::takeAutoPush()) {
+        doc["autoEc"] = ReservoirConfig::autoEcEnabled();
+        doc["autoPh"] = ReservoirConfig::autoPhEnabled();
+    }
     doc["maxStepEc"] = ReservoirConfig::maxStepEc() / 100.0f;
     doc["maxStepPh"] = ReservoirConfig::maxStepPh() / 100.0f;
     doc["dosingConstEc"] = 0.0;
@@ -908,6 +1084,46 @@ void MasterLink::sendRelaySlave(const char *mac, uint8_t relay, const char *acti
 }
 
 bool MasterLink::linkOk() { return linked; }
+
+bool MasterLink::wifiUserKnown() { return wifiUserKnown_; }
+
+bool MasterLink::wifiUserOffline() { return wifiUserOffline_; }
+
+bool MasterLink::autoDosing() { return autoDosing_; }
+
+bool MasterLink::autoDosingEc() { return autoDosingEc_; }
+
+bool MasterLink::autoDosingPh() { return autoDosingPh_; }
+
+bool MasterLink::autoHomoEc() { return autoHomoEc_; }
+
+bool MasterLink::autoHomoPh() { return autoHomoPh_; }
+
+bool MasterLink::hasDoseMlEc() { return hasDoseMlEc_; }
+
+bool MasterLink::hasDoseMlPh() { return hasDoseMlPh_; }
+
+float MasterLink::doseMlEc() { return doseMlEc_; }
+
+float MasterLink::doseMlPh() { return doseMlPh_; }
+
+void MasterLink::rememberWifiUserOffline(bool offline) {
+    wifiUserKnown_ = true;
+    wifiUserOffline_ = offline;
+}
+
+void MasterLink::sendWifiUserMode(bool offline) {
+    JsonDocument doc;
+    doc["t"] = "cmd";
+    doc["action"] = "wifi_user";
+    doc["mode"] = offline ? "offline" : "online";
+    emitJson(doc);
+    rememberWifiUserOffline(offline);
+}
+
+const MasterLink::DayWindow &MasterLink::consumoEc() { return ecDay_; }
+
+const MasterLink::DayWindow &MasterLink::consumoPh() { return phDay_; }
 
 const char *MasterLink::masterDeviceId() { return masterDeviceIdBuf; }
 

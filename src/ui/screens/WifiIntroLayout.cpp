@@ -31,6 +31,7 @@ lv_obj_t *selLbl = nullptr;
 lv_obj_t *passTa = nullptr;
 lv_obj_t *kb = nullptr;
 lv_obj_t *scanBtn = nullptr;
+lv_obj_t *offlineHost = nullptr;
 WifiIntroCallbacks cbs = {};
 char selectedSsid[WifiConfig::SSID_MAX] = {};
 bool scanning = false;
@@ -163,12 +164,36 @@ void onContinueHdr(lv_event_t *) {
     }
 }
 
+void hideOfflineConfirm() {
+    if (offlineHost) {
+        lv_obj_add_flag(offlineHost, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+void onOfflineNo(lv_event_t *) { hideOfflineConfirm(); }
+
+void onOfflineYes(lv_event_t *) {
+    hideOfflineConfirm();
+    if (cbs.onSkip) {
+        cbs.onSkip();
+    }
+}
+
+void onOfflineAsk(lv_event_t *) {
+    hideKb();
+    if (!offlineHost) {
+        return;
+    }
+    lv_obj_clear_flag(offlineHost, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(offlineHost);
+}
+
 void onBackHdr(lv_event_t *) {
     hideKb();
     if (cbs.onBack) {
         cbs.onBack();
     } else if (cbs.onSkip) {
-        cbs.onSkip();
+        onOfflineAsk(nullptr);
     }
 }
 
@@ -302,6 +327,7 @@ lv_obj_t *create(lv_obj_t *parent, const WifiIntroConfig &cfg) {
     passTa = nullptr;
     kb = nullptr;
     scanBtn = nullptr;
+    offlineHost = nullptr;
 
     WifiConfig::begin();
 
@@ -350,6 +376,11 @@ lv_obj_t *create(lv_obj_t *parent, const WifiIntroConfig &cfg) {
         lv_obj_set_size(cont, 100, 32);
         lv_obj_align(cont, LV_ALIGN_RIGHT_MID, -kPad, 0);
         lv_obj_align(scanBtn, LV_ALIGN_RIGHT_MID, -108, 0);
+        if (cbs.onSkip) {
+            lv_obj_t *skip =
+                UiKit::makeSecondaryButton(hdr, Strings::tr(Msg::WizardOfflineBtn), 88, 32, onOfflineAsk);
+            lv_obj_align(skip, LV_ALIGN_LEFT_MID, 168, 0);
+        }
     }
 
     lv_obj_t *statusBar = lv_obj_create(rootScr);
@@ -437,6 +468,54 @@ lv_obj_t *create(lv_obj_t *parent, const WifiIntroConfig &cfg) {
     lv_obj_add_event_cb(kb, onKbDone, LV_EVENT_READY, nullptr);
     lv_obj_add_event_cb(kb, onKbDone, LV_EVENT_CANCEL, nullptr);
     lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
+
+    if (!settingsMode_ && cbs.onSkip) {
+        offlineHost = lv_obj_create(rootScr);
+        lv_obj_remove_style_all(offlineHost);
+        lv_obj_set_size(offlineHost, LCD_H_RES, LCD_V_RES);
+        lv_obj_set_pos(offlineHost, 0, 0);
+        lv_obj_set_style_bg_color(offlineHost, AppTheme::bg(), 0);
+        lv_obj_set_style_bg_opa(offlineHost, LV_OPA_80, 0);
+        lv_obj_clear_flag(offlineHost, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(offlineHost, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_flag(offlineHost, LV_OBJ_FLAG_HIDDEN);
+
+        lv_obj_t *panel = lv_obj_create(offlineHost);
+        lv_obj_remove_style_all(panel);
+        lv_obj_set_size(panel, LCD_H_RES - 28, 188);
+        lv_obj_align(panel, LV_ALIGN_CENTER, 0, 0);
+        UiKit::forceOpaqueBg(panel, AppTheme::surface());
+        lv_obj_set_style_border_width(panel, 1, 0);
+        lv_obj_set_style_border_color(panel, AppTheme::gridLine(), 0);
+        lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *title = lv_label_create(panel);
+        lv_label_set_text(title, Strings::tr(Msg::WizardOfflineTitle));
+        lv_obj_set_style_text_color(title, AppTheme::text(), 0);
+        lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+        lv_obj_set_width(title, LCD_H_RES - 56);
+        lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 14);
+
+        lv_obj_t *body = lv_label_create(panel);
+        lv_label_set_text(body, Strings::tr(Msg::WizardOfflineBody));
+        lv_obj_set_style_text_color(body, AppTheme::muted(), 0);
+        lv_obj_set_style_text_font(body, &lv_font_montserrat_14, 0);
+        lv_obj_set_width(body, LCD_H_RES - 56);
+        lv_label_set_long_mode(body, LV_LABEL_LONG_WRAP);
+        lv_obj_set_style_text_align(body, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_align(body, LV_ALIGN_TOP_MID, 0, 44);
+
+        const lv_coord_t btnW = (LCD_H_RES - 28 - 36) / 2;
+        lv_obj_t *noBtn =
+            UiKit::makeSecondaryButton(panel, Strings::tr(Msg::ModeNo), btnW, AppTheme::BTN_PRIMARY_H,
+                                       onOfflineNo);
+        lv_obj_align(noBtn, LV_ALIGN_BOTTOM_LEFT, 12, -12);
+        lv_obj_t *yesBtn =
+            UiKit::makePrimaryButton(panel, Strings::tr(Msg::ModeYes), onOfflineYes);
+        lv_obj_set_size(yesBtn, btnW, AppTheme::BTN_PRIMARY_H);
+        lv_obj_align(yesBtn, LV_ALIGN_BOTTOM_RIGHT, -12, -12);
+    }
 
     layoutBody();
     if (selectedSsid[0] == '\0') {

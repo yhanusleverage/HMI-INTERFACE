@@ -51,7 +51,10 @@ enum class ScreenId : uint8_t {
     RelayName,
     RelayOnOff,
     MasterWifi,
-    MasterWifiProfile
+    MasterWifiProfile,
+    PhGain,
+    ArmSlot,
+    Urgent
 };
 
 namespace NavShell {
@@ -73,6 +76,9 @@ void goToAtlasRelay(uint8_t relayIndex0to7);
 void goToMasterLocalRelay(uint8_t relayIndex0to7);
 /** Pantalla Atlas reutilizando mac+relé actuales. */
 void goToAtlasScreen(ScreenId id);
+/** 0 enlace, 1 deriv EC, 2 deriv pH. */
+void goToArmSlot(uint8_t slot);
+uint8_t armSlot();
 void back();
 void tick();
 /** Recrea la pantalla activa (tras cambio de idioma). */

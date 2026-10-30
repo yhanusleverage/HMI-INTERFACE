@@ -6,6 +6,7 @@
 #include "AppLocale.h"
 #include "AppStrings.h"
 #include "ReservoirConfig.h"
+#include "MasterLink.h"
 #include "theme/AppTheme.h"
 #include "theme/HmiSemantics.h"
 #include "theme/UiKit.h"
@@ -20,6 +21,7 @@
  * Central — landscape lógico 480×320.
  * Header: ACTIVO|INACTIVO (izq) · temp°C (centro) · HH:MM ≡ (der) + grid 2×2.
  * Flag = solo lectura de dosingArmed (armar en Controle → Auto).
+ * Tap en la bandera abre enlace / deriv EC / deriv pH. Cada casilla entra al detalle.
  * Tap EC/pH → Dosing Info. Display Readings off → "--".
  */
 
@@ -36,8 +38,15 @@ static Cell cells[4];
 static lv_obj_t *tempValLbl = nullptr;
 static lv_obj_t *tempUnitLbl = nullptr;
 static lv_obj_t *clockLbl = nullptr;
+static lv_obj_t *armBtn = nullptr;
 static lv_obj_t *armLbl = nullptr;
+static lv_obj_t *armDoseDot = nullptr;
 static lv_obj_t *menuBtn = nullptr;
+static lv_obj_t *toast = nullptr;
+static lv_obj_t *slotVal[3] = {};
+static bool toastOpen_ = false;
+
+constexpr lv_coord_t kToastH = 116;
 
 constexpr lv_coord_t kClockSlot = 92;
 constexpr lv_coord_t kGap = 8;
@@ -45,6 +54,79 @@ constexpr lv_coord_t kGap = 8;
 constexpr lv_coord_t kNameBand = 24;
 
 void onMenu(lv_event_t *) { NavShell::goTo(ScreenId::Settings); }
+
+void formatSignedEc(float us, char *buf, size_t n) {
+    float v = us;
+    switch (UnitsConfig::ecUnit()) {
+    case EcUnit::Ppm500:
+        v *= 0.5f;
+        break;
+    case EcUnit::Ppm640:
+        v *= 0.64f;
+        break;
+    default:
+        break;
+    }
+    snprintf(buf, n, "%+.0f", static_cast<double>(v));
+}
+
+void paintToast() {
+    if (!toast) {
+        return;
+    }
+    if (toastOpen_) {
+        lv_obj_clear_flag(toast, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(toast);
+    } else {
+        lv_obj_add_flag(toast, LV_OBJ_FLAG_HIDDEN);
+    }
+    char buf[24];
+    const char *link = "--";
+    if (MasterLink::wifiUserKnown()) {
+        link = MasterLink::wifiUserOffline() ? Strings::tr(Msg::ArmLinkOff) : Strings::tr(Msg::ArmLinkOn);
+    }
+    const MasterLink::DayWindow &ec = MasterLink::consumoEc();
+    const MasterLink::DayWindow &ph = MasterLink::consumoPh();
+    const char *vals[3];
+    char ecBuf[24];
+    char phBuf[24];
+    vals[0] = link;
+    if (ec.hasDeriv) {
+        formatSignedEc(ec.deriv, ecBuf, sizeof(ecBuf));
+        vals[1] = ecBuf;
+    } else {
+        vals[1] = "--";
+    }
+    if (ph.hasDeriv) {
+        snprintf(phBuf, sizeof(phBuf), "%+.2f", static_cast<double>(ph.deriv));
+        vals[2] = phBuf;
+    } else {
+        vals[2] = "--";
+    }
+    for (int i = 0; i < 3; ++i) {
+        if (!slotVal[i]) {
+            continue;
+        }
+        const char *cur = lv_label_get_text(slotVal[i]);
+        if (!cur || strcmp(cur, vals[i]) != 0) {
+            lv_label_set_text(slotVal[i], vals[i]);
+        }
+    }
+    if (slotVal[0]) {
+        const bool off = MasterLink::wifiUserKnown() && MasterLink::wifiUserOffline();
+        lv_obj_set_style_text_color(slotVal[0], off ? AppTheme::alarm() : AppTheme::text(), 0);
+    }
+}
+
+void onArm(lv_event_t *) {
+    toastOpen_ = !toastOpen_;
+    paintToast();
+}
+
+void onSlot(lv_event_t *e) {
+    const auto slot = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(lv_event_get_user_data(e)));
+    NavShell::goToArmSlot(slot);
+}
 
 void paintArmFlag() {
     if (!armLbl) {
@@ -57,6 +139,11 @@ void paintArmFlag() {
         lv_label_set_text(armLbl, txt);
     }
     lv_obj_set_style_text_color(armLbl, armed ? AppTheme::accent() : AppTheme::muted(), 0);
+    if (armDoseDot) {
+        const bool dosing = MasterLink::autoDosing();
+        lv_obj_set_style_bg_color(armDoseDot, lv_color_hex(dosing ? 0x3DDC84 : 0xE24B4B), 0);
+        lv_obj_clear_flag(armDoseDot, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 void onCellTap(lv_event_t *e) {
@@ -114,6 +201,56 @@ lv_obj_t *makeMenuBtn(lv_obj_t *parent) {
     return btn;
 }
 
+void makeToast(lv_obj_t *parent) {
+    toast = lv_obj_create(parent);
+    lv_obj_remove_style_all(toast);
+    lv_obj_set_size(toast, LCD_H_RES, kToastH);
+    lv_obj_set_pos(toast, 0, AppTheme::HEADER_H);
+    UiKit::forceOpaqueBg(toast, AppTheme::surface());
+    lv_obj_set_style_border_width(toast, 1, 0);
+    lv_obj_set_style_border_side(toast, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_color(toast, AppTheme::gridLine(), 0);
+    lv_obj_set_style_radius(toast, 0, 0);
+    lv_obj_clear_flag(toast, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(toast, LV_OBJ_FLAG_CLICKABLE);
+    if (!toastOpen_) {
+        lv_obj_add_flag(toast, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    const Msg titles[3] = {Msg::ArmLinkTitle, Msg::ArmEcTitle, Msg::ArmPhTitle};
+    const lv_coord_t slotW = LCD_H_RES / 3;
+    for (int i = 0; i < 3; ++i) {
+        lv_obj_t *box = lv_obj_create(toast);
+        lv_obj_remove_style_all(box);
+        const lv_coord_t w = (i == 2) ? (LCD_H_RES - slotW * 2) : slotW;
+        lv_obj_set_size(box, w, kToastH);
+        lv_obj_set_pos(box, slotW * i, 0);
+        lv_obj_add_flag(box, LV_OBJ_FLAG_CLICKABLE);
+        UiKit::applyPressStyle(box, AppTheme::surface(), AppTheme::surfaceAlt(), AppTheme::surface(),
+                               AppTheme::accent());
+        lv_obj_add_event_cb(box, onSlot, LV_EVENT_CLICKED,
+                            reinterpret_cast<void *>(static_cast<uintptr_t>(i)));
+
+        lv_obj_t *title = lv_label_create(box);
+        lv_label_set_text(title, Strings::tr(titles[i]));
+        lv_obj_set_style_text_color(title, AppTheme::muted(), 0);
+        lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+        lv_obj_set_width(title, w - 8);
+        lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_long_mode(title, LV_LABEL_LONG_CLIP);
+        lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 8);
+
+        slotVal[i] = lv_label_create(box);
+        lv_label_set_text(slotVal[i], "--");
+        lv_obj_set_style_text_color(slotVal[i], AppTheme::text(), 0);
+        lv_obj_set_style_text_font(slotVal[i], &lv_font_montserrat_20, 0);
+        lv_obj_set_width(slotVal[i], w - 12);
+        lv_obj_set_style_text_align(slotVal[i], LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_long_mode(slotVal[i], LV_LABEL_LONG_WRAP);
+        lv_obj_align(slotVal[i], LV_ALIGN_BOTTOM_MID, 0, -14);
+    }
+}
+
 lv_obj_t *makeTile(lv_obj_t *parent, ParamId id, lv_coord_t x, lv_coord_t y, lv_coord_t w,
                    lv_coord_t h, Cell &out) {
     DataStore &store = DataStore::instance();
@@ -167,11 +304,10 @@ lv_obj_t *makeTile(lv_obj_t *parent, ParamId id, lv_coord_t x, lv_coord_t y, lv_
 
 /** Header: flag limpia izq · temp°C centro · HH:MM ≡ der (sin separador ·). */
 void layoutHeader() {
-    const lv_coord_t midFlag = (AppTheme::HEADER_H - 28) / 2;
     const lv_coord_t midTemp = (AppTheme::HEADER_H - 28) / 2;
 
-    if (armLbl) {
-        lv_obj_align(armLbl, LV_ALIGN_TOP_LEFT, AppTheme::PAD + 2, midFlag);
+    if (armBtn) {
+        lv_obj_align(armBtn, LV_ALIGN_TOP_LEFT, 0, 0);
     }
 
     if (tempValLbl && tempUnitLbl) {
@@ -203,8 +339,12 @@ lv_obj_t *Screens::createCentral(lv_obj_t *parent) {
     tempValLbl = nullptr;
     tempUnitLbl = nullptr;
     clockLbl = nullptr;
+    armBtn = nullptr;
     armLbl = nullptr;
+    armDoseDot = nullptr;
     menuBtn = nullptr;
+    toast = nullptr;
+    slotVal[0] = slotVal[1] = slotVal[2] = nullptr;
     for (int i = 0; i < 4; ++i) {
         cells[i] = {};
     }
@@ -212,9 +352,30 @@ lv_obj_t *Screens::createCentral(lv_obj_t *parent) {
     lv_obj_t *root = lv_obj_create(parent);
     UiKit::styleScreen(root);
 
-    armLbl = lv_label_create(root);
+    armBtn = lv_btn_create(root);
+    lv_obj_remove_style_all(armBtn);
+    lv_obj_set_size(armBtn, 168, AppTheme::HEADER_H);
+    lv_obj_add_flag(armBtn, LV_OBJ_FLAG_CLICKABLE);
+    UiKit::applyPressStyle(armBtn, AppTheme::bg(), AppTheme::surfaceAlt(), AppTheme::bg(),
+                           AppTheme::accent());
+    lv_obj_add_event_cb(armBtn, onArm, LV_EVENT_CLICKED, nullptr);
+
+    armLbl = lv_label_create(armBtn);
     lv_obj_set_style_text_font(armLbl, &lv_font_montserrat_28, 0);
+    lv_obj_set_width(armLbl, 128);
     lv_label_set_long_mode(armLbl, LV_LABEL_LONG_CLIP);
+    lv_obj_set_style_text_align(armLbl, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_align(armLbl, LV_ALIGN_LEFT_MID, AppTheme::PAD + 2, 0);
+
+    armDoseDot = lv_obj_create(armBtn);
+    lv_obj_remove_style_all(armDoseDot);
+    lv_obj_set_size(armDoseDot, 16, 16);
+    lv_obj_set_style_radius(armDoseDot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(armDoseDot, lv_color_hex(0xE24B4B), 0);
+    lv_obj_set_style_bg_opa(armDoseDot, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(armDoseDot, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(armDoseDot, LV_ALIGN_RIGHT_MID, -8, 0);
+    lv_obj_move_foreground(armDoseDot);
     paintArmFlag();
 
     tempValLbl = lv_label_create(root);
@@ -241,6 +402,9 @@ lv_obj_t *Screens::createCentral(lv_obj_t *parent) {
     makeTile(root, ParamId::Orp, 0, top + cellH + gap, cellW, cellH, cells[2]);
     makeTile(root, ParamId::Do, cellW + gap, top + cellH + gap, cellW, cellH, cells[3]);
 
+    makeToast(root);
+    paintToast();
+
     return root;
 }
 
@@ -250,6 +414,7 @@ void Screens::refreshCentral(lv_obj_t *root) {
     const TelemetrySnapshot snap = store.snapshot();
 
     paintArmFlag();
+    paintToast();
 
     bool needLayout = false;
 

@@ -32,6 +32,11 @@ lv_obj_t *makeMenuRow(lv_obj_t *parent, const char *text, lv_event_cb_t cb, void
  */
 lv_obj_t *makeHubMenuRow(lv_obj_t *parent, const char *title, const char *hint, lv_event_cb_t cb,
                          void *userData);
+/**
+ * Mueve el hint de makeHubMenuRow a la derecha del título, misma fuente (20).
+ * El título queda a la izquierda; el chevron no se toca.
+ */
+void alignHubValueRight(lv_obj_t *row);
 
 /**
  * Feedback táctil: idle + LV_STATE_PRESSED (fondo/borde).
@@ -61,6 +66,25 @@ void styleNumericKeyboard(lv_obj_t *kb);
  * onDone recibe LV_EVENT_READY o LV_EVENT_CANCEL; puede ser nullptr.
  */
 void attachNumericKeyboard(lv_obj_t *kb, lv_obj_t *ta, lv_event_cb_t onDone);
+
+/** Altura de la barra de preview encima del teclado (landscape). */
+constexpr lv_coord_t KB_EDIT_BAR_H = 48;
+
+/**
+ * Barra oculta encima de KEYBOARD_H con título + textarea (texto vivo al teclear).
+ * outTitle / outTa opcionales.
+ */
+lv_obj_t *makeKbPreviewBar(lv_obj_t *parent, lv_obj_t **outTitle, lv_obj_t **outTa);
+
+/**
+ * Muestra barra + teclado. numberMode → teclado numérico; si no, texto.
+ * acceptedChars: solo en número (nullptr → "0123456789.").
+ */
+void showKbPreview(lv_obj_t *bar, lv_obj_t *kb, lv_obj_t *ta, lv_obj_t *titleLbl,
+                   const char *title, const char *text, bool numberMode, uint32_t maxLen,
+                   const char *acceptedChars = nullptr);
+
+void hideKbPreview(lv_obj_t *bar, lv_obj_t *kb);
 
 /** Status de pantalla bomba: Idle muted · Active/Done text · Stopped warn. */
 enum class PumpUiStatus : uint8_t { Idle = 0, Active, Done, Stopped };

@@ -11,6 +11,8 @@
 
 namespace {
 
+lv_obj_t *flowHints_[PUMP_RELAY_COUNT] = {};
+
 void onBack(lv_event_t *) { NavShell::back(); }
 
 void onPick(lv_event_t *e) {
@@ -19,9 +21,20 @@ void onPick(lv_event_t *e) {
     NavShell::goToDose(ch);
 }
 
+void styleFlowHint(lv_obj_t *hintLbl) {
+    if (!hintLbl) {
+        return;
+    }
+    UiKit::alignHubValueRight(lv_obj_get_parent(hintLbl));
+}
+
 }  // namespace
 
 lv_obj_t *Screens::createDosing(lv_obj_t *parent) {
+    for (uint8_t i = 0; i < PUMP_RELAY_COUNT; ++i) {
+        flowHints_[i] = nullptr;
+    }
+
     lv_obj_t *root = lv_obj_create(parent);
     UiKit::styleScreen(root);
     lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
@@ -50,17 +63,34 @@ lv_obj_t *Screens::createDosing(lv_obj_t *parent) {
     lv_coord_t y = 0;
     const lv_coord_t step = AppTheme::MENU_ROW_H + 4;
     char lab[40];
+    char flowBuf[24];
 
     for (uint8_t i = 0; i < PUMP_RELAY_COUNT; ++i) {
         const DoseChannel ch = static_cast<DoseChannel>(i);
         PumpConfig::formatTitle(ch, lab, sizeof(lab));
-        lv_obj_t *row = UiKit::makeMenuRow(list, lab, onPick,
-                                           reinterpret_cast<void *>(static_cast<uintptr_t>(ch)));
+        PumpConfig::formatFlowHint(ch, flowBuf, sizeof(flowBuf));
+        lv_obj_t *row =
+            UiKit::makeHubMenuRow(list, lab, flowBuf, onPick,
+                                  reinterpret_cast<void *>(static_cast<uintptr_t>(ch)));
         lv_obj_set_pos(row, 12, y);
+        lv_obj_set_height(row, AppTheme::MENU_ROW_H);
+        flowHints_[i] = lv_obj_get_child(row, 1);
+        styleFlowHint(flowHints_[i]);
         y += step;
     }
 
     return root;
 }
 
-void Screens::refreshDosing(lv_obj_t *root) { (void)root; }
+void Screens::refreshDosing(lv_obj_t *root) {
+    (void)root;
+    char flowBuf[24];
+    for (uint8_t i = 0; i < PUMP_RELAY_COUNT; ++i) {
+        if (!flowHints_[i]) {
+            continue;
+        }
+        PumpConfig::formatFlowHint(static_cast<DoseChannel>(i), flowBuf, sizeof(flowBuf));
+        lv_label_set_text(flowHints_[i], flowBuf);
+        styleFlowHint(flowHints_[i]);
+    }
+}

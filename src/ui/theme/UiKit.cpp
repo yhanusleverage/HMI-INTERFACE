@@ -272,6 +272,31 @@ lv_obj_t *makeHubMenuRow(lv_obj_t *parent, const char *title, const char *hint, 
     return btn;
 }
 
+void alignHubValueRight(lv_obj_t *row) {
+    if (!row) {
+        return;
+    }
+    lv_obj_t *title = lv_obj_get_child(row, 0);
+    lv_obj_t *value = lv_obj_get_child(row, 1);
+    if (!title || !value) {
+        return;
+    }
+    constexpr lv_coord_t kValueW = 168;
+    constexpr lv_coord_t kChevronPad = 40;
+    lv_obj_set_style_text_font(value, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(value, AppTheme::accentText(), 0);
+    lv_obj_set_style_text_align(value, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_width(value, kValueW);
+    lv_label_set_long_mode(value, LV_LABEL_LONG_CLIP);
+    lv_obj_align(value, LV_ALIGN_RIGHT_MID, -kChevronPad, 0);
+
+    const lv_coord_t rowW = LCD_H_RES - 24;
+    const lv_coord_t titleW = rowW - 14 - kValueW - kChevronPad - 8;
+    lv_obj_set_width(title, titleW > 40 ? titleW : 40);
+    lv_label_set_long_mode(title, LV_LABEL_LONG_CLIP);
+    lv_obj_align(title, LV_ALIGN_LEFT_MID, 14, 0);
+}
+
 void styleParamCard(lv_obj_t *card) {
     styleMonitorCell(card);
 }
@@ -343,6 +368,91 @@ void attachNumericKeyboard(lv_obj_t *kb, lv_obj_t *ta, lv_event_cb_t onDone) {
     if (onDone) {
         lv_obj_add_event_cb(kb, onDone, LV_EVENT_READY, nullptr);
         lv_obj_add_event_cb(kb, onDone, LV_EVENT_CANCEL, nullptr);
+    }
+}
+
+lv_obj_t *makeKbPreviewBar(lv_obj_t *parent, lv_obj_t **outTitle, lv_obj_t **outTa) {
+    if (!parent) {
+        return nullptr;
+    }
+    lv_obj_t *bar = lv_obj_create(parent);
+    lv_obj_remove_style_all(bar);
+    lv_obj_set_size(bar, LCD_H_RES, KB_EDIT_BAR_H);
+    lv_obj_align(bar, LV_ALIGN_BOTTOM_MID, 0, -AppTheme::KEYBOARD_H);
+    forceOpaqueBg(bar, AppTheme::surface());
+    lv_obj_set_style_border_width(bar, 1, 0);
+    lv_obj_set_style_border_color(bar, AppTheme::gridLine(), 0);
+    lv_obj_add_flag(bar, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *title = lv_label_create(bar);
+    lv_label_set_text(title, "");
+    lv_obj_set_style_text_color(title, AppTheme::muted(), 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
+    lv_obj_align(title, LV_ALIGN_LEFT_MID, 8, 0);
+
+    lv_obj_t *ta = lv_textarea_create(bar);
+    lv_textarea_set_one_line(ta, true);
+    lv_textarea_set_max_length(ta, 32);
+    lv_obj_set_size(ta, LCD_H_RES - 100, 32);
+    lv_obj_align(ta, LV_ALIGN_RIGHT_MID, -8, 0);
+    lv_obj_set_style_bg_color(ta, AppTheme::bg(), 0);
+    lv_obj_set_style_bg_opa(ta, LV_OPA_COVER, 0);
+    lv_obj_set_style_text_color(ta, AppTheme::text(), 0);
+    lv_obj_set_style_text_font(ta, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_border_width(ta, 1, 0);
+    lv_obj_set_style_border_color(ta, AppTheme::accent(), 0);
+    lv_obj_set_style_radius(ta, 0, 0);
+    lv_obj_set_style_pad_all(ta, 4, 0);
+    lv_obj_clear_flag(ta, LV_OBJ_FLAG_SCROLLABLE);
+
+    if (outTitle) {
+        *outTitle = title;
+    }
+    if (outTa) {
+        *outTa = ta;
+    }
+    return bar;
+}
+
+void showKbPreview(lv_obj_t *bar, lv_obj_t *kb, lv_obj_t *ta, lv_obj_t *titleLbl,
+                   const char *title, const char *text, bool numberMode, uint32_t maxLen,
+                   const char *acceptedChars) {
+    if (!bar || !kb || !ta) {
+        return;
+    }
+    if (titleLbl) {
+        lv_label_set_text(titleLbl, title ? title : "");
+    }
+    lv_textarea_set_max_length(ta, maxLen > 0 ? maxLen : 32);
+    if (numberMode) {
+        lv_textarea_set_accepted_chars(ta, acceptedChars ? acceptedChars : "0123456789.");
+        lv_obj_set_width(ta, 160);
+        styleNumericKeyboard(kb);
+    } else {
+        /* nullptr = todos los caracteres ("" en LVGL rechaza todo). */
+        lv_textarea_set_accepted_chars(ta, nullptr);
+        lv_obj_set_width(ta, LCD_H_RES - 100);
+        styleDarkKeyboard(kb);
+        lv_keyboard_set_mode(kb, LV_KEYBOARD_MODE_TEXT_LOWER);
+    }
+    lv_obj_align(ta, LV_ALIGN_RIGHT_MID, -8, 0);
+    lv_textarea_set_text(ta, text ? text : "");
+    lv_keyboard_set_textarea(kb, ta);
+    lv_obj_clear_flag(bar, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(kb, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(bar);
+    lv_obj_move_foreground(kb);
+    lv_obj_add_state(ta, LV_STATE_FOCUSED);
+}
+
+void hideKbPreview(lv_obj_t *bar, lv_obj_t *kb) {
+    if (kb) {
+        lv_keyboard_set_textarea(kb, nullptr);
+        lv_obj_add_flag(kb, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (bar) {
+        lv_obj_add_flag(bar, LV_OBJ_FLAG_HIDDEN);
     }
 }
 

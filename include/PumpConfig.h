@@ -28,6 +28,9 @@ void setLabelLocal(DoseChannel ch, const char *name);
 /** Título UI: label PumpConfig → nutriente (1:1) → bombaN. */
 void formatTitle(DoseChannel ch, char *buf, size_t n);
 
+/** Hint UI: caudal calibrado en ml/s (paridad web), p.ej. "0.9670 ml/s". */
+void formatFlowHint(DoseChannel ch, char *buf, size_t n);
+
 float totalMl(DoseChannel ch);
 void addDispensed(DoseChannel ch, float ml);
 void resetTotal(DoseChannel ch);

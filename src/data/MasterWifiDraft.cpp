@@ -79,7 +79,8 @@ void applyFromMaster(const char *ssid, const char *pass, const char *email,
             const uint8_t st = WifiConfig::linkState();
             if (!same) {
                 WifiConfig::save(ssid, pass);
-            } else if (st == 0 || st == 3) {
+            } else if (st != 1) {
+                /* idle / fail / stale: reintentar sin esperar hub Sistema */
                 WifiConfig::connectSaved();
             }
         }

@@ -156,6 +156,14 @@ void PumpConfig::formatTitle(DoseChannel ch, char *buf, size_t n) {
     snprintf(buf, n, Strings::tr(Msg::PumpNameFmt), static_cast<int>(r));
 }
 
+void PumpConfig::formatFlowHint(DoseChannel ch, char *buf, size_t n) {
+    if (!buf || n == 0) {
+        return;
+    }
+    const float mlPerSec = flowMlPerMin(ch) / 60.0f;
+    snprintf(buf, n, "%.4f ml/s", static_cast<double>(mlPerSec));
+}
+
 float PumpConfig::totalMl(DoseChannel ch) {
     const uint8_t ix = static_cast<uint8_t>(ch);
     if (ix >= PUMP_RELAY_COUNT) {

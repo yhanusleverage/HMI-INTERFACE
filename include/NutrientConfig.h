@@ -34,6 +34,9 @@ void setEcHigh(float v);
 void setPhLow(float v);
 void setPhHigh(float v);
 
+/** Banda llegada del Master. Guarda NVS y no manda UART. */
+void adoptBand(bool isEc, float lo, float hi);
+
 void syncBandsToStore();
 
 size_t listCount();
@@ -41,7 +44,8 @@ const char *listName(size_t ix);
 float listMlPerL(size_t ix);
 uint8_t listRelayNumber(size_t ix);
 
-bool listAdd(const char *name, float mlPerL);
+/** Asigna una bomba ya nombrada. No reescribe la etiqueta de la bomba. */
+bool listAdd(const char *name, float mlPerL, uint8_t relayNumber);
 bool listSetName(size_t ix, const char *name);
 bool listSetMlPerL(size_t ix, float mlPerL);
 bool listSetRelayNumber(size_t ix, uint8_t relayNumber);
