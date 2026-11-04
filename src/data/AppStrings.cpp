@@ -280,7 +280,7 @@ const char *const kEs[] = {
     "Base EC/L  %.0f uS",
     "Completa todos los campos",
     "Modo Auto",
-    "Normal o Carrera",
+    "Normal, Carrera o Independiente",
     "Normal",
     "Carrera",
     "Dosifica con cualquier nivel que no sea vacio.",
@@ -328,6 +328,8 @@ const char *const kEs[] = {
     "El candado pasa a INACTIVO. La dosis en curso se corta y no guarda K.",
     "Parar",
     "Candado INACTIVO",
+    "Independiente",
+    "Dosa pH y EC sin mirar el nivel.",
 };
 
 const char *const kEn[] = {
@@ -607,7 +609,7 @@ const char *const kEn[] = {
     "Base EC/L  %.0f uS",
     "Fill in every field",
     "Auto mode",
-    "Normal or Carrera",
+    "Normal, Carrera or Independent",
     "Normal",
     "Carrera",
     "Doses at any level that is not empty.",
@@ -655,6 +657,8 @@ const char *const kEn[] = {
     "The lock goes inactive. The dose in progress is cut and K is not saved.",
     "Stop",
     "Lock inactive",
+    "Independent",
+    "Doses pH and EC without the level.",
 };
 
 const char *const kPt[] = {
@@ -934,7 +938,7 @@ const char *const kPt[] = {
     "Base EC/L  %.0f uS",
     "Preencha todos os campos",
     "Modo Auto",
-    "Normal ou Carrera",
+    "Normal, Carrera ou Independente",
     "Normal",
     "Carrera",
     "Dosa em qualquer nivel que nao seja vazio.",
@@ -982,6 +986,8 @@ const char *const kPt[] = {
     "O cadeado fica INACTIVO. A dose em curso corta e nao guarda o K.",
     "Parar",
     "Cadeado INACTIVO",
+    "Independente",
+    "Dosa pH e EC sem olhar o nivel.",
 };
 
 static_assert(sizeof(kEs) / sizeof(kEs[0]) == static_cast<size_t>(Msg::Count), "ES table size");

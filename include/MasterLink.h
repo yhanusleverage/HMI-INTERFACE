@@ -21,7 +21,7 @@ void sendNutrientProportions();
 void sendLoopControl();
 /** Emergencia: el Master corta la dosis de malla y deja el candado INACTIVO. */
 void sendMeshStop();
-/** normal | carrera. Mismo interruptor que la web. */
+/** normal | carrera | indep. Mismo interruptor que la web. */
 void sendLevelInterlock(const char *mode);
 /** Ultimo modo visto por telemetria o confirmado por cmd_ack. */
 const char *levelInterlockMode();

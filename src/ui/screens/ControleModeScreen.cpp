@@ -13,6 +13,7 @@ namespace {
 
 lv_obj_t *normalBtn_ = nullptr;
 lv_obj_t *carreraBtn_ = nullptr;
+lv_obj_t *indepBtn_ = nullptr;
 lv_obj_t *confirm_ = nullptr;
 lv_obj_t *titleLbl_ = nullptr;
 lv_obj_t *bodyLbl_ = nullptr;
@@ -32,9 +33,10 @@ void paintRow(lv_obj_t *btn, bool active) {
 }
 
 void paintSelection() {
-    const bool carrera = strcmp(MasterLink::levelInterlockMode(), "carrera") == 0;
-    paintRow(normalBtn_, !carrera);
-    paintRow(carreraBtn_, carrera);
+    const char *mode = MasterLink::levelInterlockMode();
+    paintRow(normalBtn_, strcmp(mode, "normal") == 0);
+    paintRow(carreraBtn_, strcmp(mode, "carrera") == 0);
+    paintRow(indepBtn_, strcmp(mode, "indep") == 0);
 }
 
 void showErr(const char *text) {
@@ -68,15 +70,25 @@ void openConfirm(const char *mode) {
     if (!confirm_ || !mode) {
         return;
     }
-    const bool carrera = strcmp(mode, "carrera") == 0;
-    strncpy(pending_, carrera ? "carrera" : "normal", sizeof(pending_) - 1);
+    const char *wire = "normal";
+    Msg title = Msg::ModeNormal;
+    Msg body = Msg::ModeNormalBody;
+    if (strcmp(mode, "carrera") == 0) {
+        wire = "carrera";
+        title = Msg::ModeCarrera;
+        body = Msg::ModeCarreraBody;
+    } else if (strcmp(mode, "indep") == 0) {
+        wire = "indep";
+        title = Msg::ModeIndep;
+        body = Msg::ModeIndepBody;
+    }
+    strncpy(pending_, wire, sizeof(pending_) - 1);
     pending_[sizeof(pending_) - 1] = '\0';
     if (titleLbl_) {
-        lv_label_set_text(titleLbl_, Strings::tr(carrera ? Msg::ModeCarrera : Msg::ModeNormal));
+        lv_label_set_text(titleLbl_, Strings::tr(title));
     }
     if (bodyLbl_) {
-        lv_label_set_text(bodyLbl_,
-                          Strings::tr(carrera ? Msg::ModeCarreraBody : Msg::ModeNormalBody));
+        lv_label_set_text(bodyLbl_, Strings::tr(body));
     }
     lv_obj_clear_flag(confirm_, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(confirm_);
@@ -84,6 +96,7 @@ void openConfirm(const char *mode) {
 
 void onNormal(lv_event_t *) { openConfirm("normal"); }
 void onCarrera(lv_event_t *) { openConfirm("carrera"); }
+void onIndep(lv_event_t *) { openConfirm("indep"); }
 
 void onNo(lv_event_t *) {
     if (confirm_) {
@@ -120,6 +133,9 @@ lv_obj_t *Screens::createControleMode(lv_obj_t *parent) {
     carreraBtn_ =
         UiKit::makeHubMenuRow(root, Strings::tr(Msg::ModeCarrera), "", onCarrera, nullptr);
     lv_obj_set_pos(carreraBtn_, 12, top + AppTheme::HUB_ROW_H + 4);
+    indepBtn_ =
+        UiKit::makeHubMenuRow(root, Strings::tr(Msg::ModeIndep), "", onIndep, nullptr);
+    lv_obj_set_pos(indepBtn_, 12, top + 2 * (AppTheme::HUB_ROW_H + 4));
 
     errLbl_ = lv_label_create(root);
     lv_label_set_text(errLbl_, "");

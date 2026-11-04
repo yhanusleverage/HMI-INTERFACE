@@ -332,6 +332,8 @@ enum class Msg : uint16_t {
     UrgentConfirmBody,
     UrgentConfirmOk,
     UrgentToastInactive,
+    ModeIndep,
+    ModeIndepBody,
     Count
 };
 

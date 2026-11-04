@@ -139,10 +139,21 @@ void paintArmFlag() {
         lv_label_set_text(armLbl, txt);
     }
     lv_obj_set_style_text_color(armLbl, armed ? AppTheme::accent() : AppTheme::muted(), 0);
-    if (armDoseDot) {
-        const bool dosing = MasterLink::autoDosing();
-        lv_obj_set_style_bg_color(armDoseDot, lv_color_hex(dosing ? 0x3DDC84 : 0xE24B4B), 0);
-        lv_obj_clear_flag(armDoseDot, LV_OBJ_FLAG_HIDDEN);
+    if (!armDoseDot) {
+        return;
+    }
+    lv_obj_clear_flag(armDoseDot, LV_OBJ_FLAG_HIDDEN);
+    if (!armed) {
+        lv_obj_set_style_bg_color(armDoseDot, lv_color_hex(0xE24B4B), 0);
+        lv_obj_set_style_bg_opa(armDoseDot, LV_OPA_COVER, 0);
+        return;
+    }
+    lv_obj_set_style_bg_color(armDoseDot, lv_color_hex(0x3DDC84), 0);
+    if (MasterLink::autoDosing()) {
+        const bool bright = ((lv_tick_get() / 480u) % 2u) == 0u;
+        lv_obj_set_style_bg_opa(armDoseDot, bright ? LV_OPA_COVER : LV_OPA_40, 0);
+    } else {
+        lv_obj_set_style_bg_opa(armDoseDot, LV_OPA_COVER, 0);
     }
 }
 
@@ -354,7 +365,7 @@ lv_obj_t *Screens::createCentral(lv_obj_t *parent) {
 
     armBtn = lv_btn_create(root);
     lv_obj_remove_style_all(armBtn);
-    lv_obj_set_size(armBtn, 168, AppTheme::HEADER_H);
+    lv_obj_set_size(armBtn, 183, AppTheme::HEADER_H);
     lv_obj_add_flag(armBtn, LV_OBJ_FLAG_CLICKABLE);
     UiKit::applyPressStyle(armBtn, AppTheme::bg(), AppTheme::surfaceAlt(), AppTheme::bg(),
                            AppTheme::accent());
@@ -362,7 +373,7 @@ lv_obj_t *Screens::createCentral(lv_obj_t *parent) {
 
     armLbl = lv_label_create(armBtn);
     lv_obj_set_style_text_font(armLbl, &lv_font_montserrat_28, 0);
-    lv_obj_set_width(armLbl, 128);
+    lv_obj_set_width(armLbl, 143);
     lv_label_set_long_mode(armLbl, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_align(armLbl, LV_TEXT_ALIGN_LEFT, 0);
     lv_obj_align(armLbl, LV_ALIGN_LEFT_MID, AppTheme::PAD + 2, 0);
@@ -371,7 +382,7 @@ lv_obj_t *Screens::createCentral(lv_obj_t *parent) {
     lv_obj_remove_style_all(armDoseDot);
     lv_obj_set_size(armDoseDot, 16, 16);
     lv_obj_set_style_radius(armDoseDot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(armDoseDot, lv_color_hex(0xE24B4B), 0);
+    lv_obj_set_style_bg_color(armDoseDot, lv_color_hex(0x3DDC84), 0);
     lv_obj_set_style_bg_opa(armDoseDot, LV_OPA_COVER, 0);
     lv_obj_clear_flag(armDoseDot, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_align(armDoseDot, LV_ALIGN_RIGHT_MID, -8, 0);

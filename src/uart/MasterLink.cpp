@@ -942,6 +942,8 @@ void MasterLink::rememberLevelInterlock(const char *mode) {
     }
     if (strcmp(mode, "carrera") == 0) {
         strncpy(ilockMode_, "carrera", sizeof(ilockMode_) - 1);
+    } else if (strcmp(mode, "indep") == 0) {
+        strncpy(ilockMode_, "indep", sizeof(ilockMode_) - 1);
     } else if (strcmp(mode, "normal") == 0) {
         strncpy(ilockMode_, "normal", sizeof(ilockMode_) - 1);
     }
@@ -954,7 +956,13 @@ void MasterLink::sendLevelInterlock(const char *mode) {
     JsonDocument doc;
     doc["t"] = "cmd";
     doc["action"] = "level_interlock";
-    doc["mode"] = (mode && strcmp(mode, "carrera") == 0) ? "carrera" : "normal";
+    const char* wire = "normal";
+    if (mode && strcmp(mode, "carrera") == 0) {
+        wire = "carrera";
+    } else if (mode && strcmp(mode, "indep") == 0) {
+        wire = "indep";
+    }
+    doc["mode"] = wire;
     emitJson(doc);
 }
 
