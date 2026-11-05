@@ -220,6 +220,24 @@ void levelTokenAt(const char *level, int ix, char *dst, size_t n) {
     }
 }
 
+int leveledStep(const MasterLink::RuleView *rule, int ordinal) {
+    if (!rule) {
+        return -1;
+    }
+    int seen = 0;
+    const int n = rule->stepCount < 4 ? rule->stepCount : 4;
+    for (int i = 0; i < n; ++i) {
+        if (!rule->untils[i][0]) {
+            continue;
+        }
+        if (seen == ordinal) {
+            return i;
+        }
+        ++seen;
+    }
+    return -1;
+}
+
 int relayOf(const MasterLink::RuleView *rule, int step) {
     if (!rule || step < 0 || step >= 4) {
         return 0;
@@ -263,8 +281,18 @@ void paintExplainSteps(lv_obj_t *parent, const MasterLink::RuleView *rule) {
         explainLine(parent, "Sin pasos de nivel.", false);
         return;
     }
+    bool anyUntil = false;
+    for (uint8_t s = 0; s < rule->stepCount && s < 4; ++s) {
+        if (rule->untils[s][0]) {
+            anyUntil = true;
+            break;
+        }
+    }
     bool any = false;
     for (uint8_t s = 0; s < rule->stepCount && s < 4; ++s) {
+        if (anyUntil && !rule->untils[s][0]) {
+            continue;
+        }
         char bare[48];
         stepBareName(rule->steps[s], bare, sizeof(bare));
         if (rule->relays[s] >= 0 && rule->relays[s] <= 7) {
@@ -1038,23 +1066,30 @@ void showEdit(int ix) {
             atlasMac(draftMac_, sizeof(draftMac_));
         }
         draftMac_[sizeof(draftMac_) - 1] = '\0';
-        const int r1 = relayOf(rule, 0);
+        const int s0 = leveledStep(rule, 0);
+        const int step0 = s0 >= 0 ? s0 : 0;
+        const int s1 = leveledStep(rule, 1);
+        if (rule->macs[step0][0]) {
+            strncpy(draftMac_, rule->macs[step0], sizeof(draftMac_) - 1);
+            draftMac_[sizeof(draftMac_) - 1] = '\0';
+        }
+        const int r1 = relayOf(rule, step0);
         draftR1_ = static_cast<uint8_t>(r1 + 1);
         char token[16];
-        if (rule->untils[0][0]) {
-            strncpy(token, rule->untils[0], sizeof(token) - 1);
+        if (rule->untils[step0][0]) {
+            strncpy(token, rule->untils[step0], sizeof(token) - 1);
             token[sizeof(token) - 1] = '\0';
         } else {
             levelTokenAt(rule->level, 0, token, sizeof(token));
         }
         draftLevel_ = static_cast<uint8_t>(untilIndex(token));
         draftEndOn_ = false;
-        draftTwo_ = rule->stepCount > 1;
+        draftTwo_ = s1 >= 0;
         if (draftTwo_) {
-            const int r2 = relayOf(rule, 1);
+            const int r2 = relayOf(rule, s1);
             draftR2_ = static_cast<uint8_t>(r2 + 1);
-            if (rule->untils[1][0]) {
-                strncpy(token, rule->untils[1], sizeof(token) - 1);
+            if (rule->untils[s1][0]) {
+                strncpy(token, rule->untils[s1], sizeof(token) - 1);
                 token[sizeof(token) - 1] = '\0';
             } else {
                 levelTokenAt(rule->level, 1, token, sizeof(token));

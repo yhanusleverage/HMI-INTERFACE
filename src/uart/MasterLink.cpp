@@ -23,6 +23,15 @@ static unsigned long lastRxMs = 0;
 static bool linked = false;
 static bool wifiUserKnown_ = false;
 static bool wifiUserOffline_ = false;
+static bool webWaitKnown_ = false;
+static bool webWaitDone_ = false;
+static uint16_t webWaitSec_ = 0;
+static uint32_t webWaitAtMs_ = 0;
+static bool upKnown_ = false;
+static uint32_t upLast_ = 0;
+static uint32_t masterBootSeq_ = 0;
+/** Nombres recibidos después del último arranque del Master. */
+static bool namesThisBoot_ = false;
 static bool autoDosing_ = false;
 static bool autoDosingEc_ = false;
 static bool autoDosingPh_ = false;
@@ -251,6 +260,9 @@ static void onRelayNames(JsonDocument &doc) {
 
 static void onRelayNamesEnd() {
     nameOpen_ = false;
+    if (nameStageCount_ > 0) {
+        namesThisBoot_ = true;
+    }
     const bool same = nameStageCount_ == nameLiveCount_ &&
                       memcmp(nameStage_, nameLive_, sizeof(nameLive_)) == 0;
     if (same) {
@@ -395,6 +407,40 @@ static void takeDayWindow(MasterLink::DayWindow &w, JsonDocument &doc, const cha
         w.hasDeriv = false;
         w.deriv = NAN;
     }
+}
+
+static void noteMasterUptime(uint32_t up) {
+    if (upKnown_ && up + 3U < upLast_) {
+        namesThisBoot_ = false;
+        webWaitKnown_ = false;
+        webWaitDone_ = false;
+        webWaitSec_ = 0;
+        ++masterBootSeq_;
+    }
+    upKnown_ = true;
+    upLast_ = up;
+}
+
+static void noteWebWait(int sec) {
+    if (sec <= 0) {
+        webWaitKnown_ = true;
+        webWaitDone_ = true;
+        webWaitSec_ = 0;
+        return;
+    }
+    const uint32_t now = millis();
+    uint32_t localLeft = 0;
+    if (webWaitKnown_ && !webWaitDone_ && webWaitSec_ > 0) {
+        const uint32_t elapsed = (now - webWaitAtMs_) / 1000UL;
+        localLeft = (elapsed >= webWaitSec_) ? 0 : (webWaitSec_ - elapsed);
+    }
+    const bool first = !webWaitKnown_ || webWaitDone_;
+    if (first || localLeft == 0 || sec > static_cast<int>(localLeft) + 15) {
+        webWaitSec_ = static_cast<uint16_t>(sec > 600 ? 600 : sec);
+        webWaitAtMs_ = now;
+    }
+    webWaitKnown_ = true;
+    webWaitDone_ = false;
 }
 
 static void handleLine(const char *line) {
@@ -651,6 +697,12 @@ static void handleLine(const char *line) {
     if (doc.containsKey("wifi_off")) {
         wifiUserKnown_ = true;
         wifiUserOffline_ = (doc["wifi_off"] | 0) != 0;
+    }
+    if (doc.containsKey("up")) {
+        noteMasterUptime(static_cast<uint32_t>(doc["up"] | 0));
+    }
+    if (doc.containsKey("web_s")) {
+        noteWebWait(doc["web_s"] | -1);
     }
     if (doc.containsKey("dosing")) {
         autoDosing_ = (doc["dosing"] | 0) != 0;
@@ -1114,6 +1166,25 @@ bool MasterLink::hasDoseMlPh() { return hasDoseMlPh_; }
 float MasterLink::doseMlEc() { return doseMlEc_; }
 
 float MasterLink::doseMlPh() { return doseMlPh_; }
+
+uint32_t MasterLink::masterBootSeq() { return masterBootSeq_; }
+
+int MasterLink::webLoadSecondsLeft() {
+    if (!wifiUserKnown_ || wifiUserOffline_) {
+        return -1;
+    }
+    if (namesThisBoot_) {
+        return -1;
+    }
+    if (!webWaitKnown_ || webWaitDone_ || webWaitSec_ == 0) {
+        return -1;
+    }
+    const uint32_t elapsed = (millis() - webWaitAtMs_) / 1000UL;
+    if (elapsed >= webWaitSec_) {
+        return 0;
+    }
+    return static_cast<int>(webWaitSec_ - elapsed);
+}
 
 void MasterLink::rememberWifiUserOffline(bool offline) {
     wifiUserKnown_ = true;

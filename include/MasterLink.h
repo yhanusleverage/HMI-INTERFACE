@@ -63,6 +63,13 @@ float doseMlEc();
 float doseMlPh();
 /** offline=true: el Master no busca red. El cable sigue. */
 void sendWifiUserMode(bool offline);
+/**
+ * Segundos que faltan para que el núcleo baje los datos de la web.
+ * -1 = no mostrar (fuera de línea, ya conectado, o nombres de este arranque ya llegaron).
+ */
+int webLoadSecondsLeft();
+/** Sube cada vez que el Master reinicia y el HMI sigue encendido. */
+uint32_t masterBootSeq();
 
 /** Ventana de 24 h que el Master manda en telemetría. */
 struct DayWindow {

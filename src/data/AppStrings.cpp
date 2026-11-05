@@ -330,6 +330,7 @@ const char *const kEs[] = {
     "Candado INACTIVO",
     "Independiente",
     "Dosa pH y EC sin mirar el nivel.",
+    "El nucleo carga los datos de la web",
 };
 
 const char *const kEn[] = {
@@ -659,6 +660,7 @@ const char *const kEn[] = {
     "Lock inactive",
     "Independent",
     "Doses pH and EC without the level.",
+    "The core is loading web data",
 };
 
 const char *const kPt[] = {
@@ -988,6 +990,7 @@ const char *const kPt[] = {
     "Cadeado INACTIVO",
     "Independente",
     "Dosa pH e EC sem olhar o nivel.",
+    "O nucleo esta carregando os dados da web",
 };
 
 static_assert(sizeof(kEs) / sizeof(kEs[0]) == static_cast<size_t>(Msg::Count), "ES table size");

@@ -334,6 +334,7 @@ enum class Msg : uint16_t {
     UrgentToastInactive,
     ModeIndep,
     ModeIndepBody,
+    WebLoadBody,
     Count
 };
 

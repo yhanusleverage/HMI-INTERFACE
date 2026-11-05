@@ -45,8 +45,17 @@ static lv_obj_t *menuBtn = nullptr;
 static lv_obj_t *toast = nullptr;
 static lv_obj_t *slotVal[3] = {};
 static bool toastOpen_ = false;
+static lv_obj_t *webToast = nullptr;
+static lv_obj_t *webTitleLbl = nullptr;
+static lv_obj_t *webSecLbl = nullptr;
+static lv_obj_t *webUnitLbl = nullptr;
+static lv_obj_t *webOkLbl = nullptr;
+static bool webToastDismissed_ = false;
+static uint32_t webToastBootSeen_ = 0;
 
 constexpr lv_coord_t kToastH = 116;
+constexpr lv_coord_t kWebW = 420;
+constexpr lv_coord_t kWebH = 230;
 
 constexpr lv_coord_t kClockSlot = 92;
 constexpr lv_coord_t kGap = 8;
@@ -121,6 +130,57 @@ void paintToast() {
 void onArm(lv_event_t *) {
     toastOpen_ = !toastOpen_;
     paintToast();
+}
+
+void onWebOk(lv_event_t *) {
+    webToastDismissed_ = true;
+    if (webToast) {
+        lv_obj_add_flag(webToast, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+void paintWebToast() {
+    if (!webToast || !webTitleLbl || !webSecLbl) {
+        return;
+    }
+    const uint32_t boot = MasterLink::masterBootSeq();
+    if (boot != webToastBootSeen_) {
+        webToastBootSeen_ = boot;
+        webToastDismissed_ = false;
+    }
+    const int left = MasterLink::webLoadSecondsLeft();
+    const bool show = !webToastDismissed_ && left >= 0;
+    if (!show) {
+        if (!lv_obj_has_flag(webToast, LV_OBJ_FLAG_HIDDEN)) {
+            lv_obj_add_flag(webToast, LV_OBJ_FLAG_HIDDEN);
+        }
+        return;
+    }
+    if (lv_obj_has_flag(webToast, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_clear_flag(webToast, LV_OBJ_FLAG_HIDDEN);
+    }
+    lv_obj_move_foreground(webToast);
+    const char *title = Strings::tr(Msg::WebLoadBody);
+    const char *curT = lv_label_get_text(webTitleLbl);
+    if (!curT || strcmp(curT, title) != 0) {
+        lv_label_set_text(webTitleLbl, title);
+    }
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%u", static_cast<unsigned>(left));
+    const char *cur = lv_label_get_text(webSecLbl);
+    if (!cur || strcmp(cur, buf) != 0) {
+        lv_label_set_text(webSecLbl, buf);
+    }
+    if (webUnitLbl) {
+        lv_obj_align_to(webUnitLbl, webSecLbl, LV_ALIGN_OUT_RIGHT_MID, 6, 10);
+    }
+    if (webOkLbl) {
+        const char *ok = Strings::tr(Msg::WifiOk);
+        const char *curOk = lv_label_get_text(webOkLbl);
+        if (!curOk || strcmp(curOk, ok) != 0) {
+            lv_label_set_text(webOkLbl, ok);
+        }
+    }
 }
 
 void onSlot(lv_event_t *e) {
@@ -262,6 +322,57 @@ void makeToast(lv_obj_t *parent) {
     }
 }
 
+void makeWebToast(lv_obj_t *parent) {
+    webToast = lv_obj_create(parent);
+    lv_obj_remove_style_all(webToast);
+    lv_obj_set_size(webToast, kWebW, kWebH);
+    const lv_coord_t areaTop = AppTheme::HEADER_H;
+    const lv_coord_t areaH = LCD_V_RES - areaTop;
+    lv_obj_set_pos(webToast, (LCD_H_RES - kWebW) / 2, areaTop + (areaH - kWebH) / 2);
+    UiKit::forceOpaqueBg(webToast, AppTheme::surface());
+    lv_obj_set_style_border_width(webToast, 3, 0);
+    lv_obj_set_style_border_side(webToast, LV_BORDER_SIDE_FULL, 0);
+    lv_obj_set_style_border_color(webToast, lv_color_hex(0xF5C518), 0);
+    lv_obj_set_style_radius(webToast, 8, 0);
+    lv_obj_clear_flag(webToast, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(webToast, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(webToast, LV_OBJ_FLAG_HIDDEN);
+
+    webTitleLbl = lv_label_create(webToast);
+    lv_label_set_text(webTitleLbl, Strings::tr(Msg::WebLoadBody));
+    lv_obj_set_style_text_color(webTitleLbl, AppTheme::text(), 0);
+    lv_obj_set_style_text_font(webTitleLbl, &lv_font_montserrat_28, 0);
+    lv_obj_set_width(webTitleLbl, kWebW - 28);
+    lv_obj_set_style_text_align(webTitleLbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(webTitleLbl, LV_LABEL_LONG_WRAP);
+    lv_obj_align(webTitleLbl, LV_ALIGN_TOP_MID, 0, 16);
+
+    webSecLbl = lv_label_create(webToast);
+    lv_label_set_text(webSecLbl, "0");
+    lv_obj_set_style_text_color(webSecLbl, AppTheme::text(), 0);
+    lv_obj_set_style_text_font(webSecLbl, &lv_font_montserrat_num_60, 0);
+    lv_obj_align(webSecLbl, LV_ALIGN_CENTER, -14, 6);
+
+    webUnitLbl = lv_label_create(webToast);
+    lv_label_set_text(webUnitLbl, "s");
+    lv_obj_set_style_text_color(webUnitLbl, AppTheme::text(), 0);
+    lv_obj_set_style_text_font(webUnitLbl, &lv_font_montserrat_28, 0);
+    lv_obj_align_to(webUnitLbl, webSecLbl, LV_ALIGN_OUT_RIGHT_MID, 6, 10);
+
+    lv_obj_t *okBtn = lv_btn_create(webToast);
+    lv_obj_set_size(okBtn, 140, AppTheme::TOUCH_MIN_H);
+    lv_obj_align(okBtn, LV_ALIGN_BOTTOM_MID, 0, -8);
+    UiKit::applyPressStyle(okBtn, AppTheme::surfaceAlt(), AppTheme::accent(), AppTheme::gridLine(),
+                           AppTheme::accent());
+    lv_obj_add_event_cb(okBtn, onWebOk, LV_EVENT_CLICKED, nullptr);
+
+    webOkLbl = lv_label_create(okBtn);
+    lv_label_set_text(webOkLbl, Strings::tr(Msg::WifiOk));
+    lv_obj_set_style_text_color(webOkLbl, AppTheme::text(), 0);
+    lv_obj_set_style_text_font(webOkLbl, &lv_font_montserrat_20, 0);
+    lv_obj_center(webOkLbl);
+}
+
 lv_obj_t *makeTile(lv_obj_t *parent, ParamId id, lv_coord_t x, lv_coord_t y, lv_coord_t w,
                    lv_coord_t h, Cell &out) {
     DataStore &store = DataStore::instance();
@@ -355,6 +466,11 @@ lv_obj_t *Screens::createCentral(lv_obj_t *parent) {
     armDoseDot = nullptr;
     menuBtn = nullptr;
     toast = nullptr;
+    webToast = nullptr;
+    webTitleLbl = nullptr;
+    webSecLbl = nullptr;
+    webUnitLbl = nullptr;
+    webOkLbl = nullptr;
     slotVal[0] = slotVal[1] = slotVal[2] = nullptr;
     for (int i = 0; i < 4; ++i) {
         cells[i] = {};
@@ -414,7 +530,9 @@ lv_obj_t *Screens::createCentral(lv_obj_t *parent) {
     makeTile(root, ParamId::Do, cellW + gap, top + cellH + gap, cellW, cellH, cells[3]);
 
     makeToast(root);
+    makeWebToast(root);
     paintToast();
+    paintWebToast();
 
     return root;
 }
@@ -426,6 +544,7 @@ void Screens::refreshCentral(lv_obj_t *root) {
 
     paintArmFlag();
     paintToast();
+    paintWebToast();
 
     bool needLayout = false;
 
